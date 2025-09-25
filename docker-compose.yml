@@ -21,9 +21,9 @@ services:
     ports:
       - 5000:5000
     volumes:
-      - ./backend/data/:/app/data/
-      - ./backend/logs/:/app/logs/
-      - ./backend/src/:/app/src/
+      - ./backend/data:/app/data
+      - ./backend/logs:/app/logs
+      - ./backend/src:/app/src
     environment:
       FLASK_ENV: production
       JWT_SECRET_KEY: ${BACKEND_JWT_SECRET_KEY}

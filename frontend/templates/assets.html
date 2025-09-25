@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Tài sản - Asset Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h2>Quản lý Tài sản</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#assetModal">
+        <i class="bi bi-plus"></i> Thêm tài sản
+    </button>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Mã TS</th>
+                    <th>Tên</th>
+                    <th>Phân loại</th>
+                    <th>Phòng ban</th>
+                    <th>Giá trị</th>
+                    <th>Trạng thái</th>
+                    <th>Hành động</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for asset in assets %}
+                <tr>
+                    <td>{{ asset.code }}</td>
+                    <td>{{ asset.name }}</td>
+                    <td>{{ asset.category }}</td>
+                    <td>{{ asset.department_name }}</td>
+                    <td>{{ "{:,.0f}".format(asset.purchase_value) if asset.purchase_value else '-' }}</td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if asset.status == 'active' else 'warning' if asset.status == 'damaged' else 'danger' }}">
+                            {{ asset.status }}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-info" onclick="viewAsset({{ asset.id }})">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-warning" onclick="editAsset({{ asset.id }})">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-primary" onclick="transferAsset({{ asset.id }})">
+                            <i class="bi bi-arrow-left-right"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Asset Modal -->
+<div class="modal fade" id="assetModal">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Thêm/Sửa Tài sản</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="assetForm">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label>Mã tài sản</label>
+                                <input type="text" name="code" class="form-control" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label>Tên tài sản</label>
+                                <input type="text" name="name" class="form-control" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label>Mô tả</label>
+                        <textarea name="description" class="form-control"></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label>Phân loại</label>
+                                <input type="text" name="category" class="form-control">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label>Giá trị mua</label>
+                                <input type="number" name="purchase_value" class="form-control">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label>Ngày mua</label>
+                                <input type="date" name="purchase_date" class="form-control">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label>Phòng ban</label>
+                                <select name="department_id" class="form-control" required>
+                                    {% for dept in departments %}
+                                    <option value="{{ dept.id }}">{{ dept.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label>Trạng thái</label>
+                                <select name="status" class="form-control">
+                                    <option value="ACTIVE">Đang sử dụng</option>
+                                    <option value="DAMAGED">Hỏng</option>
+                                    <option value="DISPOSED">Đã thanh lý</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary" onclick="saveAsset()">Lưu</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function saveAsset() {
+    const form = document.getElementById('assetForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData);
+    
+    fetch('/api/assets', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        location.reload();
+    });
+}
+
+function editAsset(id) {
+    // Implementation for edit
+}
+
+function transferAsset(id) {
+    // Implementation for transfer
+}
+
+function viewAsset(id) {
+    // Implementation for view
+}
+</script>
+{% endblock %}

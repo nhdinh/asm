@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Asset Management{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Dashboard</h2>
+
+<div class="row">
+    <div class="col-md-3">
+        <div class="stat-card primary">
+            <h3>{{ stats.total_assets }}</h3>
+            <p>Tổng tài sản</p>
+            <i class="bi bi-box float-end" style="font-size: 2rem;"></i>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card success">
+            <h3>{{ stats.total_departments }}</h3>
+            <p>Phòng ban</p>
+            <i class="bi bi-building float-end" style="font-size: 2rem;"></i>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card warning">
+            <h3>{{ stats.total_users }}</h3>
+            <p>Người dùng</p>
+            <i class="bi bi-people float-end" style="font-size: 2rem;"></i>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card danger">
+            <h3>{{ stats.assets_by_status.get('active', 0) }}</h3>
+            <p>Đang sử dụng</p>
+            <i class="bi bi-check-circle float-end" style="font-size: 2rem;"></i>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Trạng thái tài sản</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Hoạt động gần đây</h5>
+            </div>
+            <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                <ul class="list-group list-group-flush">
+                    {% for activity in stats.recent_activities %}
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <strong>{{ activity.username }}</strong> - {{ activity.action }}
+                                <br><small class="text-muted">{{ activity.details }}</small>
+                            </div>
+                            <small class="text-muted">{{ activity.timestamp }}</small>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const ctx = document.getElementById('statusChart').getContext('2d');
+const statusData = {{ stats.assets_by_status | tojson }};
+
+new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+        labels: Object.keys(statusData),
+        datasets: [{
+            data: Object.values(statusData),
+            backgroundColor: [
+                'rgba(75, 192, 192, 0.8)',
+                'rgba(255, 206, 86, 0.8)',
+                'rgba(255, 99, 132, 0.8)'
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+</script>
+{% endblock %}
