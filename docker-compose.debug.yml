@@ -3,7 +3,7 @@ services:
     ports:
       - 5678:5678
     environment:
-      FLASK_ENV: development
+      FLASK_ENV: "development"
     command:
       - "sh"
       - "-c"
@@ -16,8 +16,6 @@ services:
   frontend:
     ports:
       - 5679:5678
-    environment:
-      FLASK_ENV: development
     command: 
       - "sh"
       - "-c"

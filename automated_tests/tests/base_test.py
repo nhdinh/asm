@@ -34,6 +34,7 @@ class BaseTest:
         if config()["browser"] == "chrome":
             options = webdriver.ChromeOptions()
             options.add_argument(f"user-agent={user_agent}")
+            options.add_argument("--allow-insecure-localhost")
 
             if config()["headless"]:
                 options.add_argument("--headless")

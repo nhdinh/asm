@@ -227,6 +227,7 @@ def login():
             flash(f'Chào mừng, {result["user"]["full_name"]}!', "success")
             return redirect(url_for("dashboard"))
         else:
+            app.logger.debug(result)
             flash(result.get("message", "Đăng nhập thất bại."), "danger")
 
     return render_template("auth/login.html")

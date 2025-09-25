@@ -142,6 +142,8 @@ def login():
                 "full_name": user.full_name,
             },
         )
+
+        app.logger.info("User " + username + " logged in success")
         return jsonify(
             {
                 "success": True,
@@ -155,6 +157,7 @@ def login():
             }
         )
 
+    app.logger.debug("User " + username + " login failed")
     return jsonify({"success": False, "message": "Invalid credentials"}), 401
 
 
@@ -269,22 +272,24 @@ def create_department():
                 400,
             )
 
+        app.logger.info("existing dept ")
+
         # Validate manager_id if provided
         manager_id = data.get("manager_id")
-        if manager_id:
-            manager = User.query.get(manager_id)
-            if not manager:
-                return jsonify({"success": False, "message": "Invalid manager ID"}), 400
-            if manager.role not in ["admin", "manager"]:
-                return (
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": "Selected user cannot be a manager",
-                        }
-                    ),
-                    400,
-                )
+        # if manager_id:
+        #     manager = User.query.get(manager_id)
+        #     if not manager:
+        #         return jsonify({"success": False, "message": "Invalid manager ID"}), 400
+        #     if manager.role not in ["admin", "manager"]:
+        #         return (
+        #             jsonify(
+        #                 {
+        #                     "success": False,
+        #                     "message": "Selected user cannot be a manager",
+        #                 }
+        #             ),
+        #             400,
+        #         )
 
         # Create new department
         department = Department(

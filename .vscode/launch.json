@@ -1,0 +1,28 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Remote Backend Attach",
+            "type": "debugpy",
+            "request": "attach",
+            "port": 5678,
+            "host": "localhost", // Or the IP address of your Docker host if not running locally
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/backend/",
+                }
+            ]
+        },{
+            "name": "Python: Remote Frontend Attach",
+            "type": "debugpy",
+            "request": "attach",
+            "port": 5679,
+            "host": "localhost", // Or the IP address of your Docker host if not running locally
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/frontend/",
+                }
+            ]
+        }
+    ]
+}
