@@ -1,98 +1,244 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - Asset Management{% endblock %}
+
+{% block title %}Tổng quan - Hệ thống Quản lý Tài sản{% endblock %}
 
 {% block content %}
-<h2 class="mb-4">Dashboard</h2>
-
-<div class="row">
-    <div class="col-md-3">
-        <div class="stat-card primary">
-            <h3>{{ stats.total_assets }}</h3>
-            <p>Tổng tài sản</p>
-            <i class="bi bi-box float-end" style="font-size: 2rem;"></i>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-card success">
-            <h3>{{ stats.total_departments }}</h3>
-            <p>Phòng ban</p>
-            <i class="bi bi-building float-end" style="font-size: 2rem;"></i>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-card warning">
-            <h3>{{ stats.total_users }}</h3>
-            <p>Người dùng</p>
-            <i class="bi bi-people float-end" style="font-size: 2rem;"></i>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-card danger">
-            <h3>{{ stats.assets_by_status.get('active', 0) }}</h3>
-            <p>Đang sử dụng</p>
-            <i class="bi bi-check-circle float-end" style="font-size: 2rem;"></i>
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="fas fa-tachometer-alt me-2"></i>Tổng quan hệ thống
+    </h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
+                <i class="fas fa-sync-alt"></i> Làm mới
+            </button>
         </div>
     </div>
 </div>
 
-<div class="row mt-4">
-    <div class="col-md-6">
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stats-card border-left-primary">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Tổng tài sản</div>
+                        <div class="h5 mb-0 font-weight-bold">{{ stats.total_assets }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-boxes fa-2x text-primary opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stats-card border-left-success">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Đang sử dụng</div>
+                        <div class="h5 mb-0 font-weight-bold">{{ stats.assets_by_status.get('active', 0) }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-check-circle fa-2x text-success opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stats-card border-left-warning">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Phòng ban</div>
+                        <div class="h5 mb-0 font-weight-bold">{{ stats.total_departments }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-building fa-2x text-warning opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stats-card border-left-info">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Người dùng</div>
+                        <div class="h5 mb-0 font-weight-bold">{{ stats.total_users }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-users fa-2x text-info opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row mb-4">
+    <div class="col-lg-6 mb-3">
         <div class="card">
             <div class="card-header">
-                <h5>Trạng thái tài sản</h5>
+                <i class="fas fa-chart-pie me-2"></i>Phân bố trạng thái tài sản
             </div>
             <div class="card-body">
-                <canvas id="statusChart"></canvas>
+                <canvas id="statusChart" style="max-height: 300px;"></canvas>
             </div>
         </div>
     </div>
-    <div class="col-md-6">
+    
+    <div class="col-lg-6 mb-3">
         <div class="card">
             <div class="card-header">
-                <h5>Hoạt động gần đây</h5>
+                <i class="fas fa-chart-bar me-2"></i>Tài sản theo phòng ban
             </div>
-            <div class="card-body" style="max-height: 400px; overflow-y: auto;">
-                <ul class="list-group list-group-flush">
-                    {% for activity in stats.recent_activities %}
-                    <li class="list-group-item">
-                        <div class="d-flex justify-content-between">
-                            <div>
-                                <strong>{{ activity.username }}</strong> - {{ activity.action }}
-                                <br><small class="text-muted">{{ activity.details }}</small>
-                            </div>
-                            <small class="text-muted">{{ activity.timestamp }}</small>
-                        </div>
-                    </li>
-                    {% endfor %}
-                </ul>
+            <div class="card-body">
+                <canvas id="departmentChart" style="max-height: 300px;"></canvas>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Recent Activities -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-history me-2"></i>Hoạt động gần đây
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Thời gian</th>
+                                <th>Người dùng</th>
+                                <th>Hành động</th>
+                                <th>Chi tiết</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for activity in stats.recent_activities %}
+                            <tr>
+                                <td>
+                                    <small class="text-muted">
+                                        {{ activity.timestamp }}
+                                    </small>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ activity.username }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if 'create' in activity.action else 'info' if 'update' in activity.action else 'danger' if 'delete' in activity.action else 'primary' }}">
+                                        {{ activity.action }}
+                                    </span>
+                                </td>
+                                <td>{{ activity.details }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% if not stats.recent_activities %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-3">
+                                    Chưa có hoạt động nào
+                                </td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .border-left-primary {
+        border-left: 4px solid #3498db !important;
+    }
+    .border-left-success {
+        border-left: 4px solid #27ae60 !important;
+    }
+    .border-left-warning {
+        border-left: 4px solid #f39c12 !important;
+    }
+    .border-left-info {
+        border-left: 4px solid #00bcd4 !important;
+    }
+    .text-xs {
+        font-size: .875rem;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const ctx = document.getElementById('statusChart').getContext('2d');
+// Status Chart
+const statusCtx = document.getElementById('statusChart').getContext('2d');
 const statusData = {{ stats.assets_by_status | tojson }};
 
-new Chart(ctx, {
+new Chart(statusCtx, {
     type: 'doughnut',
     data: {
-        labels: Object.keys(statusData),
+        labels: ['Đang sử dụng', 'Chưa sử dụng', 'Hỏng', 'Đã thanh lý'],
         datasets: [{
-            data: Object.values(statusData),
+            data: [
+                statusData.active || 0,
+                statusData.inactive || 0,
+                statusData.damaged || 0,
+                statusData.disposed || 0
+            ],
             backgroundColor: [
-                'rgba(75, 192, 192, 0.8)',
-                'rgba(255, 206, 86, 0.8)',
-                'rgba(255, 99, 132, 0.8)'
+                '#27ae60',
+                '#95a5a6',
+                '#e74c3c',
+                '#2c3e50'
             ]
         }]
     },
     options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: {
             legend: {
                 position: 'bottom'
+            }
+        }
+    }
+});
+
+// Department Chart (placeholder - needs data from backend)
+const deptCtx = document.getElementById('departmentChart').getContext('2d');
+new Chart(deptCtx, {
+    type: 'bar',
+    data: {
+        labels: ['IT', 'HR', 'Kế toán', 'Marketing', 'Vận hành'],
+        datasets: [{
+            label: 'Số lượng tài sản',
+            data: [12, 8, 5, 15, 10],
+            backgroundColor: '#3498db'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                display: false
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true
             }
         }
     }

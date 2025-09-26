@@ -96,7 +96,7 @@ services:
     container_name: ams-postgres
     secrets:
       - postgres_user
-      - postgres_password
+      - postgres_password # TODO: change temporary password in postgres init file
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER_FILE: /run/secrets/postgres_user
