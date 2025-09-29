@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Asset Management{% endblock %}</title>
-    
+    <title>{% block title %}Hệ thống Quản lý Tài sản{% endblock %}</title>
+
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -58,7 +61,7 @@
 
         .card {
             border: none;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             border-radius: 8px;
         }
 
@@ -115,6 +118,7 @@
     </style>
     {% block extra_css %}{% endblock %}
 </head>
+
 <body>
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: var(--primary-color);">
@@ -122,26 +126,28 @@
             <a class="navbar-brand" href="{{ url_for('dashboard') }}">
                 <i class="fas fa-boxes"></i> Quản lý Tài sản
             </a>
-            
+
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
-            
+
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     {% if session.user %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="fas fa-user"></i> {{ session.user.username }}
+                            <i class="fas fa-user"></i> {{ session.user.full_name }}
                         </a>
                         <ul class="dropdown-menu">
                             <li><span class="dropdown-item-text">
-                                <small>{{ session.user.role|title }}</small>
-                            </span></li>
-                            <li><hr class="dropdown-divider"></li>
+                                    <small>{{ session.user.role|title }}</small>
+                                </span></li>
+                            <li>
+                                <hr class="dropdown-divider">
+                            </li>
                             <li><a class="dropdown-item" href="{{ url_for('logout') }}">
-                                <i class="fas fa-sign-out-alt"></i> Đăng xuất
-                            </a></li>
+                                    <i class="fas fa-sign-out-alt"></i> Đăng xuất
+                                </a></li>
                         </ul>
                     </li>
                     {% endif %}
@@ -158,38 +164,31 @@
                 <div class="position-sticky pt-3">
                     <ul class="nav flex-column">
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" 
-                               href="{{ url_for('dashboard') }}">
+                            <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}"
+                                href="{{ url_for('dashboard') }}">
                                 <i class="fas fa-tachometer-alt"></i> Tổng quan
                             </a>
                         </li>
-                        
+
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'assets' %}active{% endif %}" 
-                               href="{{ url_for('assets') }}">
+                            <a class="nav-link {% if request.endpoint.startswith('assets') %}active{% endif %}"
+                                href="{{ url_for('assets_list') }}">
                                 <i class="fas fa-boxes"></i> Tài sản
                             </a>
                         </li>
-                        
+
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'reports' %}active{% endif %}" 
-                               href="{{ url_for('reports') }}">
+                            <a class="nav-link {% if request.endpoint.startswith('reports') %}active{% endif %}"
+                                href="{{ url_for('reports_index') }}">
                                 <i class="fas fa-chart-bar"></i> Báo cáo
                             </a>
                         </li>
-                        
+
                         {% if session.user.role == 'admin' %}
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'departments' %}active{% endif %}" 
-                               href="{{ url_for('departments') }}">
+                            <a class="nav-link {% if request.endpoint.startswith('departments') %}active{% endif %}"
+                                href="{{ url_for('departments_list') }}">
                                 <i class="fas fa-building"></i> Phòng ban
-                            </a>
-                        </li>
-                        
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'users' %}active{% endif %}" 
-                               href="{{ url_for('users') }}">
-                                <i class="fas fa-users"></i> Người dùng
                             </a>
                         </li>
                         {% endif %}
@@ -199,26 +198,27 @@
 
             <!-- Main content -->
             <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
-            {% else %}
-            <main class="col-12">
-            {% endif %}
-                <div class="content-wrapper">
-                    <!-- Flash messages -->
-                    {% with messages = get_flashed_messages(with_categories=true) %}
+                {% else %}
+                <main class="col-12">
+                    {% endif %}
+                    <div class="content-wrapper">
+                        <!-- Flash messages -->
+                        {% with messages = get_flashed_messages(with_categories=true) %}
                         {% if messages %}
-                            {% for category, message in messages %}
-                                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-                                    {{ message }}
-                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                                </div>
-                            {% endfor %}
+                        {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show"
+                            role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                        {% endfor %}
                         {% endif %}
-                    {% endwith %}
+                        {% endwith %}
 
-                    <!-- Page content -->
-                    {% block content %}{% endblock %}
-                </div>
-            </main>
+                        <!-- Page content -->
+                        {% block content %}{% endblock %}
+                    </div>
+                </main>
         </div>
     </div>
 
@@ -238,15 +238,13 @@
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- jQuery -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <!-- Custom JS -->
     <script>
         // Auto-hide alerts after 5 seconds
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(function() {
+        document.addEventListener('DOMContentLoaded', function () {
+            setTimeout(function () {
                 var alerts = document.querySelectorAll('.alert');
-                alerts.forEach(function(alert) {
+                alerts.forEach(function (alert) {
                     var bsAlert = new bootstrap.Alert(alert);
                     bsAlert.close();
                 });
@@ -268,4 +266,5 @@
     </script>
     {% block extra_js %}{% endblock %}
 </body>
+
 </html>

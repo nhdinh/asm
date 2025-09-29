@@ -1,5 +1,5 @@
+from app import create_app
 from flask import (
-    Flask,
     render_template,
     request,
     redirect,
@@ -12,27 +12,29 @@ from flask import (
 import requests
 import os
 from functools import wraps
-from dotenv import load_dotenv
 from datetime import datetime
 import io
 import csv
-
-load_dotenv()
-
-template_folder = os.getenv("TEMPLATE_PATH", "/app/templates")
-
-app = Flask(__name__, template_folder=template_folder)
-app.secret_key = os.getenv("SECRET_KEY", "frontend-secret-key")
+from api_client import ApiClient
 
 # Backend API URL
 API_URL = os.getenv("API_URL", "http://backend:5000/api")
+
+app = create_app()
+
+def get_api_client():
+    client = ApiClient(app)
+
+    if "access_token" in session:
+        client.set_token(session["access_token"])
+    return client
 
 
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if "token" not in session:
-            flash("Vui lòng đăng nhập để tiếp tục", "warning")
+        if "access_token" not in session:
+            flash("Vui lòng đăng nhập để tiếp tục.", "warning")
             return redirect(url_for("login"))
         return f(*args, **kwargs)
 
@@ -42,8 +44,8 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if "user" not in session or session["user"]["role"] != "admin":
-            flash("Bạn không có quyền truy cập trang này", "danger")
+        if "user" not in session or session["user"].get("role") != "admin":
+            flash("Bạn không có quyền truy cập chức năng này.", "danger")
             return redirect(url_for("dashboard"))
         return f(*args, **kwargs)
 
@@ -88,14 +90,14 @@ def currency_filter(value):
 # Routes
 @app.route("/")
 def index():
-    if "token" in session:
+    if "access_token" in session:
         return redirect(url_for("dashboard"))
     return redirect(url_for("login"))
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if "token" in session:
+    if "access_token" in session:
         return redirect(url_for("dashboard"))
 
     if request.method == "POST":
@@ -109,7 +111,7 @@ def login():
 
             if response.status_code == 200:
                 result = response.json()
-                session["token"] = result["access_token"]
+                session["access_token"] = result["access_token"]
                 session["user"] = result["user"]
                 flash("Đăng nhập thành công!", "success")
 
@@ -133,9 +135,9 @@ def logout():
     return redirect(url_for("login"))
 
 
-@app.route("/dashboard")
+@app.route("/dashboard1")
 @login_required
-def dashboard():
+def dashboard1():
     try:
         response = requests.get(
             f"{API_URL}/reports/dashboard", headers=get_headers(), timeout=5
@@ -146,6 +148,39 @@ def dashboard():
         flash("Không thể tải dữ liệu dashboard", "warning")
 
     return render_template("dashboard.html", stats=stats)
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    try:
+        client = get_api_client()
+
+        # Get summary statistics
+        assets_response = client.get_assets()
+        total_assets = assets_response.get("total", 0)
+
+        departments = client.get_departments()
+        total_departments = len(departments)
+
+        # Get recent assets (last 10)
+        recent_assets = assets_response.get("assets", [])[:10]
+
+        return render_template(
+            "dashboard/index.html",
+            total_assets=total_assets,
+            total_departments=total_departments,
+            recent_assets=recent_assets,
+            departments=departments,
+        )
+    except Exception as e:
+        flash(f"Lỗi tải dashboard: {str(e)}", "danger")
+        return render_template(
+            "dashboard/index.html",
+            total_assets=0,
+            total_departments=0,
+            recent_assets=[],
+            departments=[],
+        )
 
 
 @app.route("/assets")
@@ -409,7 +444,3 @@ def not_found(e):
 @app.errorhandler(500)
 def server_error(e):
     return render_template("500.html"), 500
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=True)

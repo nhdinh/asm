@@ -2,23 +2,24 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Remote Backend Attach",
+            "name": "Python: Backend Attach",
             "type": "debugpy",
             "request": "attach",
             "port": 5678,
-            "host": "localhost", 
+            "host": "localhost",
             "pathMappings": [
                 {
                     "localRoot": "${workspaceFolder}/backend/src",
                     "remoteRoot": "/app/src"
                 }
             ]
-        },{
-            "name": "Python: Remote Frontend Attach",
+        },
+        {
+            "name": "Python: Frontend Attach",
             "type": "debugpy",
             "request": "attach",
             "port": 5679,
-            "host": "localhost", 
+            "host": "localhost",
             "pathMappings": [
                 {
                     "localRoot": "${workspaceFolder}/frontend/src",

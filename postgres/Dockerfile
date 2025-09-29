@@ -9,6 +9,6 @@ RUN chmod +x /usr/local/bin/entry.sh
 
 EXPOSE 5432
 
-ENTRYPOINT ["/usr/local/bin/entry.sh"]
+# ENTRYPOINT ["/usr/local/bin/entry.sh"]
 
 CMD ["postgres"]
