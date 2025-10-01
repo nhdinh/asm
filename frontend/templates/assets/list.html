@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block page_title %}Quản Lý Tài Sản{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between mb-4">
+        <form method="GET" class="flex gap-2">
+            <input type="text" name="search" value="{{ search }}" 
+                   placeholder="🔍 Tìm kiếm..." 
+                   class="border rounded px-4 py-2 w-96">
+            <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                Tìm
+            </button>
+        </form>
+        <a href="{{ url_for('assets.create') }}" 
+           class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+            + Thêm Mới
+        </a>
+    </div>
+
+    <table class="w-full">
+        <thead class="bg-gray-100">
+            <tr>
+                <th class="px-4 py-2 text-left">Mã</th>
+                <th class="px-4 py-2 text-left">Tên</th>
+                <th class="px-4 py-2 text-left">Loại</th>
+                <th class="px-4 py-2 text-left">Phòng Ban</th>
+                <th class="px-4 py-2 text-left">Giá Trị</th>
+                <th class="px-4 py-2 text-left">Thao Tác</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for asset in assets.items %}
+            <tr class="border-b">
+                <td class="px-4 py-3">{{ asset.code }}</td>
+                <td class="px-4 py-3">{{ asset.name }}</td>
+                <td class="px-4 py-3">{{ asset.asset_type }}</td>
+                <td class="px-4 py-3">{{ asset.department.name if asset.department else '-' }}</td>
+                <td class="px-4 py-3">{{ "{:,.0f}".format(asset.value) if asset.value else '-' }} VNĐ</td>
+                <td class="px-4 py-3">
+                    <a href="{{ url_for('transfers.create', asset_id=asset.id) }}" 
+                       class="text-green-500 hover:underline mr-2">Điều chuyển</a>
+                    <form method="POST" action="{{ url_for('assets.delete', id=asset.id) }}" 
+                          class="inline" onsubmit="return confirm('Xóa?')">
+                        <button type="submit" class="text-red-500 hover:underline">Xóa</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

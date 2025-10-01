@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block page_title %}Báo Cáo{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6">
+    <h3 class="text-lg font-bold mb-4">Báo Cáo Tổng Hợp</h3>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+        <div class="border rounded p-4">
+            <div class="text-gray-600 text-sm">Tổng Số Tài Sản</div>
+            <div class="text-3xl font-bold text-blue-600">{{ total_assets }}</div>
+        </div>
+        <div class="border rounded p-4">
+            <div class="text-gray-600 text-sm">Tổng Giá Trị</div>
+            <div class="text-3xl font-bold text-green-600">{{ "%.1f"|format(total_value/1000000000) }}B VNĐ</div>
+        </div>
+    </div>
+
+    <div>
+        <button onclick="window.print()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+            🖨️ In Báo Cáo
+        </button>
+    </div>
+</div>
+{% endblock %}

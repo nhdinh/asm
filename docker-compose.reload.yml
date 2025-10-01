@@ -1,0 +1,31 @@
+services:
+  backend:
+    ports:
+      - 5678:5678
+    environment:
+      FLASK_ENV: "development"
+    command:
+      - "sh"
+      - "-c"
+      - python src/backend.py
+
+  # Frontend Web Service
+  frontend:
+    ports:
+      - 5679:5678
+    environment:
+      FLASK_ENV: "development"
+    command:
+      - "sh"
+      - "-c"
+      - |
+        python -m gunicorn --bind=0.0.0.0:3000 --workers=3 --timeout=120 \
+        --reload frontend:app
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8081:8080
+    networks:
+      - asset-network

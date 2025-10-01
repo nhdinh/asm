@@ -6,10 +6,13 @@ from flask_cors import CORS
 from flask_migrate import Migrate
 from datetime import timedelta
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 import logging
 
-load_dotenv()
+ENV_PATH = "./.env"
+
+# load dotenv
+load_dotenv(dotenv_path=ENV_PATH)
 
 db = SQLAlchemy()
 jwt = JWTManager()
@@ -32,6 +35,12 @@ db_name = os.getenv("POSTGRES_DB", "asset_man")
 
 if db_user is None or db_password is None:
     exit(10)
+
+
+def save_env(key: str, val: str):
+    set_key(dotenv_path=ENV_PATH, key_to_set=key, value_to_set=val)
+
+    load_dotenv()
 
 
 def create_app():

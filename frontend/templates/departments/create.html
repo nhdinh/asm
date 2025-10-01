@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block page_title %}Thêm Phòng Ban{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+    <h3 class="text-lg font-bold mb-4">Thêm Phòng Ban Mới</h3>
+
+    <form method="POST">
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Mã Phòng Ban</label>
+                <input type="text" name="code" required class="border rounded px-3 py-2 w-full">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Tên Phòng Ban</label>
+                <input type="text" name="name" required class="border rounded px-3 py-2 w-full">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Trưởng Phòng</label>
+                <input type="text" name="manager_name" class="border rounded px-3 py-2 w-full">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Địa Điểm</label>
+                <input type="text" name="location" class="border rounded px-3 py-2 w-full">
+            </div>
+            <div class="col-span-2">
+                <label class="block text-sm font-medium mb-1">Mô Tả</label>
+                <textarea name="description" rows="3" class="border rounded px-3 py-2 w-full"></textarea>
+            </div>
+        </div>
+
+        <div class="mt-6 flex gap-2">
+            <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                Lưu
+            </button>
+            <a href="{{ url_for('departments.list') }}" 
+               class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                Hủy
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

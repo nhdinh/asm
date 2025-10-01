@@ -7,11 +7,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+# Backend API URL
+API_BASE_URL = os.getenv("API_BASE_URL", "http://backend:5000/api")
+
+
 def create_app():
     template_folder = os.getenv("TEMPLATE_PATH", "/app/templates")
 
     app = Flask(__name__, template_folder=template_folder)
     app.secret_key = os.getenv("SECRET_KEY", "frontend-secret-key")
+    app.config["API_BASE_URL"] = API_BASE_URL
 
     # Setup logging
     if not app.debug:

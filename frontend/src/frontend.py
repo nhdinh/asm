@@ -9,31 +9,28 @@ from flask import (
     jsonify,
     send_file,
 )
-import requests
 import os
 from functools import wraps
 from datetime import datetime
 import io
 import csv
-from api_client import ApiClient
-
-# Backend API URL
-API_URL = os.getenv("API_URL", "http://backend:5000/api")
+from api_client import ApiClient, Keys, Methods
 
 app = create_app()
+
 
 def get_api_client():
     client = ApiClient(app)
 
-    if "access_token" in session:
-        client.set_token(session["access_token"])
+    if Keys.ACCESS_TOKEN in session:
+        client.set_token(session[Keys.ACCESS_TOKEN])
     return client
 
 
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if "access_token" not in session:
+        if Keys.ACCESS_TOKEN not in session:
             flash("Vui lòng đăng nhập để tiếp tục.", "warning")
             return redirect(url_for("login"))
         return f(*args, **kwargs)
@@ -53,7 +50,7 @@ def admin_required(f):
 
 
 def get_headers():
-    return {"Authorization": f"Bearer {session.get('token')}"}
+    return {"Authorization": f"Bearer {session.get(Keys.ACCESS_TOKEN)}"}
 
 
 # Template filters
@@ -90,24 +87,23 @@ def currency_filter(value):
 # Routes
 @app.route("/")
 def index():
-    if "access_token" in session:
+    if Keys.ACCESS_TOKEN in session:
         return redirect(url_for("dashboard"))
     return redirect(url_for("login"))
 
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login", methods=[Methods.GET, Methods.POST])
 def login():
-    if "access_token" in session:
+    if Keys.ACCESS_TOKEN in session:
         return redirect(url_for("dashboard"))
 
-    if request.method == "POST":
-        data = {
-            "username": request.form["username"],
-            "password": request.form["password"],
-        }
+    if request.method == Methods.POST:
+        username = request.form[Keys.USERNAME]
+        password = request.form[Keys.PASSWORD]
 
         try:
-            response = requests.post(f"{API_URL}/auth/login", json=data, timeout=5)
+            client = get_api_client()
+            response = client.login(username, password)
 
             if response.status_code == 200:
                 result = response.json()
@@ -122,10 +118,11 @@ def login():
                 return redirect(url_for("dashboard"))
             else:
                 flash("Tên đăng nhập hoặc mật khẩu không đúng", "danger")
-        except requests.exceptions.RequestException as e:
-            flash("Không thể kết nối đến server. Vui lòng thử lại sau.", "danger")
+        except Exception as e:
+            app.logger.exception(e)
+            flash("Xảy ra lỗi khi đăng nhập", "danger")
 
-    return render_template("login.html")
+    return render_template("users/login.html")
 
 
 @app.route("/logout")
@@ -134,20 +131,6 @@ def logout():
     flash("Đã đăng xuất thành công", "info")
     return redirect(url_for("login"))
 
-
-@app.route("/dashboard1")
-@login_required
-def dashboard1():
-    try:
-        response = requests.get(
-            f"{API_URL}/reports/dashboard", headers=get_headers(), timeout=5
-        )
-        stats = response.json() if response.status_code == 200 else {}
-    except:
-        stats = {}
-        flash("Không thể tải dữ liệu dashboard", "warning")
-
-    return render_template("dashboard.html", stats=stats)
 
 @app.route("/dashboard")
 @login_required
@@ -197,13 +180,13 @@ def assets():
     try:
         # Get assets with filters
         response = requests.get(
-            f"{API_URL}/assets", params=filters, headers=get_headers(), timeout=5
+            f"{API_BASE_URL}/assets", params=filters, headers=get_headers(), timeout=5
         )
         assets = response.json() if response.status_code == 200 else []
 
         # Get departments for filter
         response_dept = requests.get(
-            f"{API_URL}/departments", headers=get_headers(), timeout=5
+            f"{API_BASE_URL}/departments", headers=get_headers(), timeout=5
         )
         departments = response_dept.json() if response_dept.status_code == 200 else []
     except:
@@ -222,13 +205,13 @@ def assets():
 def departments():
     try:
         response = requests.get(
-            f"{API_URL}/departments", headers=get_headers(), timeout=5
+            f"{API_BASE_URL}/departments", headers=get_headers(), timeout=5
         )
         departments = response.json() if response.status_code == 200 else []
 
         # Get users for manager assignment
         response_users = requests.get(
-            f"{API_URL}/users", headers=get_headers(), timeout=5
+            f"{API_BASE_URL}/users", headers=get_headers(), timeout=5
         )
         users = response_users.json() if response_users.status_code == 200 else []
     except:
@@ -244,11 +227,13 @@ def departments():
 @admin_required
 def users():
     try:
-        response = requests.get(f"{API_URL}/users", headers=get_headers(), timeout=5)
+        response = requests.get(
+            f"{API_BASE_URL}/users", headers=get_headers(), timeout=5
+        )
         users = response.json() if response.status_code == 200 else []
 
         response_dept = requests.get(
-            f"{API_URL}/departments", headers=get_headers(), timeout=5
+            f"{API_BASE_URL}/departments", headers=get_headers(), timeout=5
         )
         departments = response_dept.json() if response_dept.status_code == 200 else []
     except:
@@ -271,7 +256,7 @@ def reports():
     try:
         # Get departments for filter
         response_dept = requests.get(
-            f"{API_URL}/departments", headers=get_headers(), timeout=5
+            f"{API_BASE_URL}/departments", headers=get_headers(), timeout=5
         )
         departments = response_dept.json() if response_dept.status_code == 200 else []
 
@@ -283,7 +268,10 @@ def reports():
                 endpoint = "/reports/assets"
 
             response = requests.get(
-                f"{API_URL}{endpoint}", params=filters, headers=get_headers(), timeout=5
+                f"{API_BASE_URL}{endpoint}",
+                params=filters,
+                headers=get_headers(),
+                timeout=5,
             )
             report_data = response.json() if response.status_code == 200 else None
     except:
@@ -302,7 +290,7 @@ def reports():
 @app.route("/api/<path:path>", methods=["GET", "POST", "PUT", "DELETE"])
 @login_required
 def proxy_api(path):
-    url = f"{API_URL}/{path}"
+    url = f"{API_BASE_URL}/{path}"
 
     try:
         if request.method == "GET":
@@ -334,7 +322,9 @@ def proxy_api(path):
 @login_required
 def export_assets():
     try:
-        response = requests.get(f"{API_URL}/assets", headers=get_headers(), timeout=5)
+        response = requests.get(
+            f"{API_BASE_URL}/assets", headers=get_headers(), timeout=5
+        )
         assets = response.json() if response.status_code == 200 else []
 
         # Create CSV
@@ -391,7 +381,10 @@ def export_report():
             endpoint = "/reports/assets"
 
         response = requests.get(
-            f"{API_URL}{endpoint}", params=filters, headers=get_headers(), timeout=5
+            f"{API_BASE_URL}{endpoint}",
+            params=filters,
+            headers=get_headers(),
+            timeout=5,
         )
         data = response.json() if response.status_code == 200 else {}
 

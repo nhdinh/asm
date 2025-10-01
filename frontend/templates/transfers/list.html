@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block page_title %}Điều Chuyển Tài Sản{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between mb-4">
+        <h3 class="text-lg font-bold">Lịch Sử Điều Chuyển</h3>
+        <a href="{{ url_for('transfers.create') }}" 
+           class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+            + Tạo Phiếu
+        </a>
+    </div>
+
+    <table class="w-full border">
+        <thead class="bg-gray-100">
+            <tr>
+                <th class="px-4 py-2 text-left">Mã Phiếu</th>
+                <th class="px-4 py-2 text-left">Tài Sản</th>
+                <th class="px-4 py-2 text-left">Từ</th>
+                <th class="px-4 py-2 text-left">Đến</th>
+                <th class="px-4 py-2 text-left">Ngày</th>
+                <th class="px-4 py-2 text-left">Trạng Thái</th>
+                <th class="px-4 py-2 text-left">Thao Tác</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for transfer in transfers %}
+            <tr class="border-b">
+                <td class="px-4 py-2">{{ transfer.transfer_code }}</td>
+                <td class="px-4 py-2">{{ transfer.asset.code }}</td>
+                <td class="px-4 py-2">{{ transfer.from_department.name if transfer.from_department else '-' }}</td>
+                <td class="px-4 py-2">{{ transfer.to_department.name }}</td>
+                <td class="px-4 py-2">{{ transfer.transfer_date.strftime('%d/%m/%Y') }}</td>
+                <td class="px-4 py-2">
+                    <span class="px-2 py-1 rounded text-sm
+                        {% if transfer.status == 'pending' %}bg-yellow-100 text-yellow-800
+                        {% else %}bg-green-100 text-green-800{% endif %}">
+                        {{ 'Chờ duyệt' if transfer.status == 'pending' else 'Đã duyệt' }}
+                    </span>
+                </td>
+                <td class="px-4 py-2">
+                    {% if transfer.status == 'pending' %}
+                        <form method="POST" action="{{ url_for('transfers.approve', id=transfer.id) }}" class="inline">
+                            <button type="submit" class="text-green-500 hover:underline">Duyệt</button>
+                        </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

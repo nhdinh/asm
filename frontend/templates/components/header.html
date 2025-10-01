@@ -1,0 +1,18 @@
+<div class="bg-white shadow-sm p-4">
+    <div class="flex justify-between items-center">
+        <h2 class="text-2xl font-bold text-gray-800">
+            {% block page_title %}Dashboard{% endblock %}
+        </h2>
+        <div class="flex items-center gap-4">
+            <span class="text-sm text-gray-600">
+                👤 {{ session.user.full_name }} 
+                {% if session.user.department %}
+                    - {{ session.user.department.name }}
+                {% endif %}
+            </span>
+            <a href="{{ url_for('logout') }}" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+                Đăng Xuất
+            </a>
+        </div>
+    </div>
+</div>

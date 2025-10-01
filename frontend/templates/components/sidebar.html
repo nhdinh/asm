@@ -1,0 +1,35 @@
+<div class="w-64 bg-gray-800 text-white">
+    <div class="p-4 bg-gray-900">
+        <h1 class="text-xl font-bold">📊 Quản Lý Tài Sản</h1>
+        <p class="text-sm text-gray-400 mt-1">Phiên bản 1.0</p>
+    </div>
+    <nav class="mt-4">
+        <a href="{{ url_for('dashboard') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint == 'main.dashboard' %}active-menu{% endif %}">
+            📈 Dashboard
+        </a>
+        <a href="{{ url_for('assets') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'assets' in request.endpoint %}active-menu{% endif %}">
+            🏢 Quản Lý Tài Sản
+        </a>
+        <a href="{{ url_for('departments') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'departments' in request.endpoint %}active-menu{% endif %}">
+            🏛️ Phòng Ban
+        </a>
+        <a href="{{ url_for('users') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'users' in request.endpoint %}active-menu{% endif %}">
+            🔄 Điều Chuyển TS
+        </a>
+        <a href="#" class="menu-item block px-4 py-3 hover:bg-gray-700">
+            ♻️ Vòng Đời Tài Sản
+        </a>
+        <a href="#" class="menu-item block px-4 py-3 hover:bg-gray-700">
+            📦 Kiểm Kê
+        </a>
+        <a href="#" class="menu-item block px-4 py-3 hover:bg-gray-700">
+            🔧 Bảo Trì
+        </a>
+        <a href="{{ url_for('reports') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'reports' in request.endpoint %}active-menu{% endif %}">
+            📊 Báo Cáo
+        </a>
+        <a href="#" class="menu-item block px-4 py-3 hover:bg-gray-700">
+            👥 Phân Quyền
+        </a>
+    </nav>
+</div>

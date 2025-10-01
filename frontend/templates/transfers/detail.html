@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block page_title %}Chi Tiết Phiếu Điều Chuyển{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+    <h3 class="text-lg font-bold mb-4">Phiếu Điều Chuyển: {{ transfer.transfer_code }}</h3>
+
+    <div class="space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <div class="text-sm text-gray-600">Tài sản</div>
+                <div class="font-bold">{{ transfer.asset.code }} - {{ transfer.asset.name }}</div>
+            </div>
+            <div>
+                <div class="text-sm text-gray-600">Ngày điều chuyển</div>
+                <div class="font-bold">{{ transfer.transfer_date.strftime('%d/%m/%Y') }}</div>
+            </div>
+            <div>
+                <div class="text-sm text-gray-600">Từ phòng ban</div>
+                <div class="font-bold">{{ transfer.from_department.name if transfer.from_department else '-' }}</div>
+            </div>
+            <div>
+                <div class="text-sm text-gray-600">Đến phòng ban</div>
+                <div class="font-bold">{{ transfer.to_department.name }}</div>
+            </div>
+            <div>
+                <div class="text-sm text-gray-600">Người giao</div>
+                <div class="font-bold">{{ transfer.from_user.full_name if transfer.from_user else '-' }}</div>
+            </div>
+            <div>
+                <div class="text-sm text-gray-600">Người nhận</div>
+                <div class="font-bold">{{ transfer.to_user.full_name }}</div>
+            </div>
+        </div>
+
+        <div>
+            <div class="text-sm text-gray-600">Vị trí mới</div>
+            <div class="font-bold">{{ transfer.new_location }}</div>
+        </div>
+
+        <div>
+            <div class="text-sm text-gray-600">Lý do</div>
+            <div>{{ transfer.reason }}</div>
+        </div>
+
+        <div>
+            <div class="text-sm text-gray-600">Trạng thái</div>
+            <span class="px-3 py-1 rounded
+                {% if transfer.status == 'pending' %}bg-yellow-100 text-yellow-800
+                {% else %}bg-green-100 text-green-800{% endif %}">
+                {{ 'Chờ phê duyệt' if transfer.status == 'pending' else 'Đã phê duyệt' }}
+            </span>
+        </div>
+    </div>
+
+    <div class="mt-6">
+        <a href="{{ url_for('transfers.list') }}" 
+           class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+            Quay lại
+        </a>
+    </div>
+</div>
+{% endblock %}

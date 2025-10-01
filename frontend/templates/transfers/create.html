@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block page_title %}Tạo Phiếu Điều Chuyển{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+    <h3 class="text-lg font-bold mb-4">Tạo Phiếu Điều Chuyển Mới</h3>
+
+    <form method="POST">
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Tài Sản</label>
+                <select name="asset_id" required class="border rounded px-3 py-2 w-full">
+                    <option value="">Chọn tài sản</option>
+                    {% for asset in assets %}
+                        <option value="{{ asset.id }}">{{ asset.code }} - {{ asset.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Phòng Ban Đích</label>
+                <select name="to_department_id" required class="border rounded px-3 py-2 w-full">
+                    <option value="">Chọn phòng ban</option>
+                    {% for dept in departments %}
+                        <option value="{{ dept.id }}">{{ dept.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Người Nhận</label>
+                <select name="to_user_id" required class="border rounded px-3 py-2 w-full">
+                    <option value="">Chọn người nhận</option>
+                    {% for user in users %}
+                        <option value="{{ user.id }}">{{ user.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Vị Trí Mới</label>
+                <input type="text" name="new_location" required class="border rounded px-3 py-2 w-full">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Ngày Điều Chuyển</label>
+                <input type="date" name="transfer_date" required value="{{ today }}" class="border rounded px-3 py-2 w-full">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Lý Do</label>
+                <textarea name="reason" required rows="3" class="border rounded px-3 py-2 w-full"></textarea>
+            </div>
+        </div>
+
+        <div class="mt-6 flex gap-2">
+            <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                Tạo Phiếu
+            </button>
+            <a href="{{ url_for('transfers.list') }}" 
+               class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                Hủy
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -24,6 +24,7 @@ services:
       - ./backend/data:/app/data
       - ./backend/logs:/app/logs
       - ./backend/src:/app/src
+      - ./backend/.env:/app/.env
     environment:
       FLASK_ENV: production
       JWT_SECRET_KEY: ${BACKEND_JWT_SECRET_KEY}
@@ -56,7 +57,7 @@ services:
       - ./frontend/templates/:/app/templates/
     environment:
       FLASK_ENV: production
-      API_BASE_URL: http://backend:5000
+      API_BASE_URL: http://backend:5000/api
       SECRET_KEY: ${FRONTEND_APP_SECRET}
     restart: unless-stopped
     depends_on:

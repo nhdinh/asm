@@ -15,6 +15,11 @@ class AssetStatus(Enum):
     DISPOSED = "disposed"
 
 
+class ActivityStatus(Enum):
+    FAILED = "failed"
+    SUCCESS = "success"
+
+
 class User(db.Model):
     __tablename__ = "users"
 
@@ -145,11 +150,14 @@ class UserActivity(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    username = db.Column(db.String(50), nullable=False)
     action = db.Column(db.String(100), nullable=False)
     entity_type = db.Column(db.String(50))
     entity_id = db.Column(db.Integer)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     details = db.Column(db.Text)
+    status = db.Column(db.Enum(ActivityStatus), default=ActivityStatus.FAILED)
+    failed_count = db.Column(db.Integer, default=0)
 
     def to_dict(self):
         return {
@@ -161,4 +169,6 @@ class UserActivity(db.Model):
             "entity_id": self.entity_id,
             "timestamp": self.timestamp.isoformat(),
             "details": self.details,
+            "status": self.status,
+            "failed_count": self.failed_count,
         }

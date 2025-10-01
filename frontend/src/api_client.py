@@ -1,12 +1,34 @@
-from urllib import request
-from flask import Flask
+from enum import StrEnum
+from flask import Flask, session
+
+
+class Keys:
+    ACCESS_TOKEN = "access_token"
+    USERNAME = "username"
+    PASSWORD = "password"
+
+    LOGIN_PATH = "/auth/login"
+    LOGOUT_PATH = "/logout"
+
+
+class Methods(StrEnum):
+    POST = "POST"
+    GET = "GET"
+    PUT = "PUT"
+    DELETE = "DELETE"
 
 
 class ApiClient:
     def __init__(self, app: Flask):
         self.app = app
-        self.base_url = app.pp.config["API_BASE_URL"]
-        self.session = request.Session()
+        self.base_url = app.config["API_BASE_URL"]
+        self.session = session
+
+    def url(self, key: str, *args) -> str:
+        if not dir(Keys).__contains__(key):
+            raise
+
+        return f"{self.base_url}{key}"
 
     def set_token(self, token):
         self.session.headers.update({"Authorization": f"Bearer {token}"})
@@ -14,15 +36,15 @@ class ApiClient:
     def login(self, username, password):
         try:
             response = self.session.post(
-                f"{self.base_url}/auth/login",
-                json={"username": username, "password": password},
+                self.url(Keys.LOGIN_PATH),
+                json={Keys.USERNAME: username, Keys.PASSWORD: password},
                 timeout=10,
             )
             return response.json() if response.status_code == 200 else None
         except Exception as e:
             self.app.logger.error(f"Login error: {str(e)}")
             return None
-        
+
     def get_assets(self, filters=None):
         try:
             params = filters or {}
@@ -36,7 +58,7 @@ class ApiClient:
             self.app.logger.error(f"Get assets error: {str(e)}")
             raise
 
-    def create_asset(self, asset_data: 'Asset'):
+    def create_asset(self, asset_data: "Asset"):
         try:
             response = self.session.post(
                 f"{self.base_url}/api/assets", json=asset_data, timeout=10

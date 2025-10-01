@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block page_title %}Thêm Tài Sản{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+    <h3 class="text-lg font-bold mb-4">Thêm Tài Sản Mới</h3>
+
+    <form method="POST">
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Mã Tài Sản</label>
+                <input type="text" name="code" required class="border rounded px-3 py-2 w-full">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Tên Tài Sản</label>
+                <input type="text" name="name" required class="border rounded px-3 py-2 w-full">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Loại</label>
+                <select name="asset_type" class="border rounded px-3 py-2 w-full">
+                    <option>Máy tính</option>
+                    <option>Thiết bị văn phòng</option>
+                    <option>Xe cộ</option>
+                    <option>Nội thất</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Giá Trị (VNĐ)</label>
+                <input type="number" name="value" class="border rounded px-3 py-2 w-full">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Phòng Ban</label>
+                <select name="department_id" class="border rounded px-3 py-2 w-full">
+                    <option value="">Chọn phòng ban</option>
+                    {% for dept in departments %}
+                        <option value="{{ dept.id }}">{{ dept.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Vị Trí</label>
+                <input type="text" name="location" class="border rounded px-3 py-2 w-full">
+            </div>
+        </div>
+
+        <div class="mt-6 flex gap-2">
+            <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                Lưu
+            </button>
+            <a href="{{ url_for('assets.list') }}" 
+               class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                Hủy
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

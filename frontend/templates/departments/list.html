@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block page_title %}Quản Lý Phòng Ban{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between mb-4">
+        <h3 class="text-lg font-bold">Danh Sách Phòng Ban</h3>
+        <a href="{{ url_for('departments.create') }}" 
+           class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+            + Thêm Phòng Ban
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {% for dept in departments %}
+        <div class="border rounded-lg p-6 hover:shadow-lg transition">
+            <div class="mb-4">
+                <h4 class="text-xl font-bold text-blue-600">{{ dept.name }}</h4>
+                <p class="text-sm text-gray-600">Mã: {{ dept.code }}</p>
+            </div>
+            <div class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Trưởng phòng:</span>
+                    <span class="font-medium">{{ dept.manager_name or '-' }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Nhân sự:</span>
+                    <span class="font-medium">{{ dept.user_count }} người</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Tài sản:</span>
+                    <span class="font-medium">{{ dept.asset_count }} TS</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Giá trị:</span>
+                    <span class="font-medium text-green-600">
+                        {{ "%.1f"|format(dept.total_value/1000000000) }}B VNĐ
+                    </span>
+                </div>
+            </div>
+            <a href="{{ url_for('departments.detail', id=dept.id) }}" 
+               class="mt-4 block text-center bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                Xem Chi Tiết
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
