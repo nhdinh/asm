@@ -63,6 +63,9 @@ class Department(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
     description = db.Column(db.Text)
+    asset_count = db.Column(db.Integer)
+    user_count = db.Column(db.Integer)
+    total_value = db.Column(db.Float)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     assets = db.relationship("Asset", backref="department", lazy="dynamic")
@@ -74,6 +77,8 @@ class Department(db.Model):
             "description": self.description,
             "created_at": self.created_at.isoformat(),
             "asset_count": self.assets.count(),
+            "user_count": self.user_count,
+            "total_value": self.total_value,
         }
 
 

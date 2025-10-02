@@ -6,17 +6,17 @@
 <div class="bg-white rounded-lg shadow p-6">
     <div class="flex justify-between mb-4">
         <form method="GET" class="flex gap-2">
-            <input type="text" name="search" value="{{ search }}" 
-                   placeholder="🔍 Tìm kiếm..." 
+            <input type="text" name="search" value="{{ filters.search }}"
+                   placeholder="🔍 Tìm kiếm..."
                    class="border rounded px-4 py-2 w-96">
             <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
                 Tìm
             </button>
         </form>
-        <a href="{{ url_for('assets.create') }}" 
-           class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+        <button onclick="alert('Chức năng đang phát triển')"
+                class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
             + Thêm Mới
-        </a>
+        </button>
     </div>
 
     <table class="w-full">
@@ -31,24 +31,37 @@
             </tr>
         </thead>
         <tbody>
-            {% for asset in assets.items %}
+            {% for asset in assets %}
             <tr class="border-b">
                 <td class="px-4 py-3">{{ asset.code }}</td>
                 <td class="px-4 py-3">{{ asset.name }}</td>
-                <td class="px-4 py-3">{{ asset.asset_type }}</td>
-                <td class="px-4 py-3">{{ asset.department.name if asset.department else '-' }}</td>
-                <td class="px-4 py-3">{{ "{:,.0f}".format(asset.value) if asset.value else '-' }} VNĐ</td>
+                <td class="px-4 py-3">{{ asset.category or asset.asset_type or '-' }}</td>
+                <td class="px-4 py-3">{{ asset.department_name or (asset.department.name if asset.department else '-') }}</td>
+                <td class="px-4 py-3">{{ "{:,.0f}".format(asset.purchase_value or asset.value or 0) }} VNĐ</td>
                 <td class="px-4 py-3">
-                    <a href="{{ url_for('transfers.create', asset_id=asset.id) }}" 
-                       class="text-green-500 hover:underline mr-2">Điều chuyển</a>
-                    <form method="POST" action="{{ url_for('assets.delete', id=asset.id) }}" 
-                          class="inline" onsubmit="return confirm('Xóa?')">
-                        <button type="submit" class="text-red-500 hover:underline">Xóa</button>
-                    </form>
+                    <button onclick="alert('Chức năng đang phát triển')"
+                       class="text-green-500 hover:underline mr-2">Điều chuyển</button>
+                    <button onclick="deleteAsset({{ asset.id }})"
+                          class="text-red-500 hover:underline">Xóa</button>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" class="px-4 py-8 text-center text-gray-500">
+                    Không có tài sản nào
                 </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+<script>
+function deleteAsset(assetId) {
+    if (confirm('Bạn có chắc chắn muốn xóa tài sản này?')) {
+        // TODO: Implement delete asset via API
+        alert('Chức năng đang phát triển: Xóa tài sản ' + assetId);
+    }
+}
+</script>
 {% endblock %}

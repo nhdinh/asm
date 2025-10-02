@@ -1,50 +1,153 @@
-{% extends "base.html" %}
-
-{% block page_title %}Quản Lý Phòng Ban{% endblock %}
-
+{% extends "base.html" %} {% block page_title %}Quản Lý Phòng Ban{% endblock %}
 {% block content %}
 <div class="bg-white rounded-lg shadow p-6">
-    <div class="flex justify-between mb-4">
-        <h3 class="text-lg font-bold">Danh Sách Phòng Ban</h3>
-        <a href="{{ url_for('departments.create') }}" 
-           class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-            + Thêm Phòng Ban
-        </a>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {% for dept in departments %}
-        <div class="border rounded-lg p-6 hover:shadow-lg transition">
-            <div class="mb-4">
-                <h4 class="text-xl font-bold text-blue-600">{{ dept.name }}</h4>
-                <p class="text-sm text-gray-600">Mã: {{ dept.code }}</p>
-            </div>
-            <div class="space-y-2 text-sm">
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Trưởng phòng:</span>
-                    <span class="font-medium">{{ dept.manager_name or '-' }}</span>
-                </div>
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Nhân sự:</span>
-                    <span class="font-medium">{{ dept.user_count }} người</span>
-                </div>
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Tài sản:</span>
-                    <span class="font-medium">{{ dept.asset_count }} TS</span>
-                </div>
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Giá trị:</span>
-                    <span class="font-medium text-green-600">
-                        {{ "%.1f"|format(dept.total_value/1000000000) }}B VNĐ
-                    </span>
-                </div>
-            </div>
-            <a href="{{ url_for('departments.detail', id=dept.id) }}" 
-               class="mt-4 block text-center bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-                Xem Chi Tiết
-            </a>
+  <div class="flex justify-between mb-4">
+    <h3 class="text-lg font-bold">Danh Sách Phòng Ban</h3>
+    <button
+      onclick="showAddDepartmentForm()"
+      class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+    >
+      + Thêm Phòng ban mới
+    </button>
+  </div>
+  <div
+    id="addDepartmentForm"
+    style="display: none"
+    class="mb-6 p-4 bg-gray-50 rounded border"
+  >
+    <form id="departmentForm">
+      <input type="hidden" id="deptId" value="" />
+      <h3 class="font-bold mb-4">Thêm Phòng ban mới</h3>
+      <div class="grid grid-cols-2 gap-4">
+        <input
+          type="text"
+          placeholder="Tên Phòng"
+          name="name"
+          class="border rounded px-3 py-2"
+        />
+        <textarea
+          placeholder="Chi tiết"
+          name="description"
+          class="border rounded px-3 py-2"
+        ></textarea>
+        <input
+          type="text"
+          name="manager"
+          placeholder="Người chịu trách nhiệm"
+          class="border rounded px-3 py-2"
+        />
+      </div>
+      <div class="mt-4 flex gap-2">
+        <button
+          type="button"
+          onclick="saveDepartment(event)"
+          class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+        >
+          Lưu
+        </button>
+        <button
+          type="button"
+          onclick="document.getElementById('addDepartmentForm').style.display='none'"
+          class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+        >
+          Hủy
+        </button>
+      </div>
+    </form>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    {% for dept in departments %}
+    <div class="border rounded-lg p-6 hover:shadow-lg transition">
+      <div class="mb-4">
+        <h4 class="text-xl font-bold text-blue-600">{{ dept.name }}</h4>
+        <p class="text-sm text-gray-600">Mã: {{ dept.code }}</p>
+      </div>
+      <div class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <span class="text-gray-600">Quản lý phòng:</span>
+          <span class="font-medium">{{ dept.manager_name or '-' }}</span>
         </div>
-        {% endfor %}
+        <div class="flex justify-between">
+          <span class="text-gray-600">Nhân sự:</span>
+          <span class="font-medium">{{ dept.user_count }} người</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-600">Tài sản:</span>
+          <span class="font-medium">{{ dept.asset_count }} TS</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-600">Giá trị:</span>
+          <span class="font-medium text-green-600">
+            {{ "%.1f"|format(dept.total_value/1000000000) }}B VNĐ
+          </span>
+        </div>
+      </div>
+      <button
+        onclick="alert('Chức năng đang phát triển')"
+        class="mt-4 w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+      >
+        Xem Chi Tiết
+      </button>
     </div>
+    {% endfor %}
+  </div>
 </div>
+<script>
+  function showAddDepartmentForm() {
+    document.getElementById("addDepartmentForm").style.display = "block";
+  }
+
+  function saveDepartment(event) {
+    event.preventDefault();
+
+    const form = document.getElementById("departmentForm");
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData);
+    const deptId = document.getElementById("deptId").value;
+
+    const url = deptId ? `/api/departments/${deptId}` : "/api/departments";
+    const method = deptId ? "PUT" : "POST";
+
+    fetch(url, {
+      method: method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        location.reload();
+      })
+      .catch((error) => {
+        console.error("Error:", error);
+        alert("Đã xảy ra lỗi khi lưu phòng ban!");
+      });
+  }
+
+  function editDepartment(id) {
+    fetch(`/api/departments/${id}`)
+      .then((response) => response.json())
+      .then((dept) => {
+        document.getElementById("deptId").value = dept.id;
+        document.querySelector('[name="name"]').value = dept.name;
+        document.querySelector('[name="description"]').value =
+          dept.description || "";
+
+        new bootstrap.Modal(document.getElementById("departmentModal")).show();
+      });
+  }
+
+  function deleteDepartment(id) {
+    if (confirmDelete("Bạn có chắc chắn muốn xóa phòng ban này?")) {
+      fetch(`/api/departments/${id}`, {
+        method: "DELETE",
+      }).then((response) => {
+        if (response.ok) {
+          location.reload();
+        } else {
+          alert("Không thể xóa phòng ban này!");
+        }
+      });
+    }
+  }
+</script>
 {% endblock %}

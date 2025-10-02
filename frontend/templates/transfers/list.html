@@ -6,10 +6,10 @@
 <div class="bg-white rounded-lg shadow p-6">
     <div class="flex justify-between mb-4">
         <h3 class="text-lg font-bold">Lịch Sử Điều Chuyển</h3>
-        <a href="{{ url_for('transfers.create') }}" 
-           class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+        <button onclick="alert('Chức năng đang phát triển')"
+                class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
             + Tạo Phiếu
-        </a>
+        </button>
     </div>
 
     <table class="w-full border">
@@ -41,9 +41,8 @@
                 </td>
                 <td class="px-4 py-2">
                     {% if transfer.status == 'pending' %}
-                        <form method="POST" action="{{ url_for('transfers.approve', id=transfer.id) }}" class="inline">
-                            <button type="submit" class="text-green-500 hover:underline">Duyệt</button>
-                        </form>
+                        <button onclick="alert('Chức năng đang phát triển')"
+                                class="text-green-500 hover:underline">Duyệt</button>
                     {% endif %}
                 </td>
             </tr>

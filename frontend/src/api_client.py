@@ -1,14 +1,6 @@
 from enum import StrEnum
-from flask import Flask, session
-
-
-class Keys:
-    ACCESS_TOKEN = "access_token"
-    USERNAME = "username"
-    PASSWORD = "password"
-
-    LOGIN_PATH = "/auth/login"
-    LOGOUT_PATH = "/logout"
+from flask import Flask
+import requests
 
 
 class Methods(StrEnum):
@@ -22,13 +14,11 @@ class ApiClient:
     def __init__(self, app: Flask):
         self.app = app
         self.base_url = app.config["API_BASE_URL"]
-        self.session = session
+        self.session = requests.Session()
 
-    def url(self, key: str, *args) -> str:
-        if not dir(Keys).__contains__(key):
-            raise
-
-        return f"{self.base_url}{key}"
+        self.app.logger.info(
+            f"ApiClient initialized with " + app.config["API_BASE_URL"]
+        )
 
     def set_token(self, token):
         self.session.headers.update({"Authorization": f"Bearer {token}"})
@@ -36,14 +26,18 @@ class ApiClient:
     def login(self, username, password):
         try:
             response = self.session.post(
-                self.url(Keys.LOGIN_PATH),
-                json={Keys.USERNAME: username, Keys.PASSWORD: password},
+                f"{self.base_url}/auth/login",
+                json={"username": username, "password": password},
                 timeout=10,
             )
-            return response.json() if response.status_code == 200 else None
+
+            if response is not None:
+                return response
+            else:
+                raise
         except Exception as e:
-            self.app.logger.error(f"Login error: {str(e)}")
-            return None
+            self.app.logger.exception(e)
+            return {"message": "API Error", "status_code": 400}
 
     def get_assets(self, filters=None):
         try:
@@ -84,11 +78,25 @@ class ApiClient:
 
     def get_departments(self):
         try:
-            response = self.session.get(f"{self.base_url}/api/departments", timeout=10)
+            response = self.session.get(f"{self.base_url}/departments", timeout=10)
             response.raise_for_status()
+
             return response.json()
         except Exception as e:
             self.app.logger.error(f"Get departments error: {str(e)}")
+            raise
+
+    def create_department(self, department_data):
+        try:
+            response = self.session.post(
+                f"{self.base_url}/api/departments", json=department_data, timeout=10
+            )
+
+            self.app.logger.info(self.session)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Create department error: {str(e)}")
             raise
 
     def transfer_asset(self, asset_id, transfer_data):

@@ -6,16 +6,50 @@
 <div class="bg-white rounded-lg shadow p-6">
     <h3 class="text-lg font-bold mb-4">Báo Cáo Tổng Hợp</h3>
 
+    {% if report_data %}
     <div class="grid grid-cols-2 gap-4 mb-6">
         <div class="border rounded p-4">
             <div class="text-gray-600 text-sm">Tổng Số Tài Sản</div>
-            <div class="text-3xl font-bold text-blue-600">{{ total_assets }}</div>
+            <div class="text-3xl font-bold text-blue-600">{{ report_data.total_assets or report_data.total or 0 }}</div>
         </div>
         <div class="border rounded p-4">
             <div class="text-gray-600 text-sm">Tổng Giá Trị</div>
-            <div class="text-3xl font-bold text-green-600">{{ "%.1f"|format(total_value/1000000000) }}B VNĐ</div>
+            <div class="text-3xl font-bold text-green-600">{{ "%.1f"|format((report_data.total_value|default(0))/1000000000) }}B VNĐ</div>
         </div>
     </div>
+
+    <div class="mb-4">
+        <h4 class="font-bold mb-2">Chi Tiết:</h4>
+        {% if report_data.assets %}
+        <table class="w-full border">
+            <thead class="bg-gray-100">
+                <tr>
+                    <th class="px-4 py-2 text-left">Mã</th>
+                    <th class="px-4 py-2 text-left">Tên</th>
+                    <th class="px-4 py-2 text-left">Loại</th>
+                    <th class="px-4 py-2 text-left">Phòng Ban</th>
+                    <th class="px-4 py-2 text-left">Giá Trị</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for asset in report_data.assets %}
+                <tr class="border-b">
+                    <td class="px-4 py-2">{{ asset.code }}</td>
+                    <td class="px-4 py-2">{{ asset.name }}</td>
+                    <td class="px-4 py-2">{{ asset.category or '-' }}</td>
+                    <td class="px-4 py-2">{{ asset.department_name or '-' }}</td>
+                    <td class="px-4 py-2">{{ "{:,.0f}".format(asset.purchase_value or 0) }} VNĐ</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="text-center text-gray-500 py-8">
+        Vui lòng chọn bộ lọc để xem báo cáo
+    </div>
+    {% endif %}
 
     <div>
         <button onclick="window.print()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">

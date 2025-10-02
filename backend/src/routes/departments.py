@@ -26,7 +26,13 @@ def create_department():
     if Department.query.filter_by(name=data["name"]).first():
         return jsonify({"message": "Department already exists"}), 400
 
-    dept = Department(name=data["name"], description=data.get("description"))
+    dept = Department(
+        name=data["name"],
+        description=data.get("description"),
+        user_count=0,
+        asset_count=0,
+        total_value=0,
+    )
 
     db.session.add(dept)
     db.session.commit()

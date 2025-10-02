@@ -10,11 +10,11 @@
     </div>
     <div class="bg-white p-6 rounded-lg shadow">
         <div class="text-gray-500 text-sm">Giá Trị Tổng</div>
-        <div class="text-3xl font-bold text-green-600 mt-2">{{ "%.1f"|format(total_value/1000000000) }}B VNĐ</div>
+        <div class="text-3xl font-bold text-green-600 mt-2">{{ "%.1f"|format((total_value|default(0))/1000000000) }}B VNĐ</div>
     </div>
     <div class="bg-white p-6 rounded-lg shadow">
         <div class="text-gray-500 text-sm">Số Phòng Ban</div>
-        <div class="text-3xl font-bold text-orange-600 mt-2">{{ departments_count }}</div>
+        <div class="text-3xl font-bold text-orange-600 mt-2">{{ total_departments }}</div>
     </div>
     <div class="bg-white p-6 rounded-lg shadow">
         <div class="text-gray-500 text-sm">Cần Bảo Trì</div>

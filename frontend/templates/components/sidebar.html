@@ -13,8 +13,11 @@
         <a href="{{ url_for('departments') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'departments' in request.endpoint %}active-menu{% endif %}">
             🏛️ Phòng Ban
         </a>
-        <a href="{{ url_for('users') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'users' in request.endpoint %}active-menu{% endif %}">
+        <a href="#" class="menu-item block px-4 py-3 hover:bg-gray-700">
             🔄 Điều Chuyển TS
+        </a>
+        <a href="{{ url_for('users') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'users' in request.endpoint %}active-menu{% endif %}">
+            👥 Người Dùng
         </a>
         <a href="#" class="menu-item block px-4 py-3 hover:bg-gray-700">
             ♻️ Vòng Đời Tài Sản

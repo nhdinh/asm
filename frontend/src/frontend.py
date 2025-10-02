@@ -14,23 +14,26 @@ from functools import wraps
 from datetime import datetime
 import io
 import csv
-from api_client import ApiClient, Keys, Methods
+import requests
+from api_client import ApiClient
+import traceback
 
 app = create_app()
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:5000")
 
 
 def get_api_client():
     client = ApiClient(app)
 
-    if Keys.ACCESS_TOKEN in session:
-        client.set_token(session[Keys.ACCESS_TOKEN])
+    if "access_token" in session:
+        client.set_token(session["access_token"])
     return client
 
 
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if Keys.ACCESS_TOKEN not in session:
+        if "access_token" not in session:
             flash("Vui lòng đăng nhập để tiếp tục.", "warning")
             return redirect(url_for("login"))
         return f(*args, **kwargs)
@@ -50,7 +53,8 @@ def admin_required(f):
 
 
 def get_headers():
-    return {"Authorization": f"Bearer {session.get(Keys.ACCESS_TOKEN)}"}
+    access_token = session.get("access_token")
+    return {"Authorization": f"Bearer {access_token}"}
 
 
 # Template filters
@@ -87,19 +91,19 @@ def currency_filter(value):
 # Routes
 @app.route("/")
 def index():
-    if Keys.ACCESS_TOKEN in session:
+    if "access_token" in session:
         return redirect(url_for("dashboard"))
     return redirect(url_for("login"))
 
 
-@app.route("/login", methods=[Methods.GET, Methods.POST])
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    if Keys.ACCESS_TOKEN in session:
+    if "access_token" in session:
         return redirect(url_for("dashboard"))
 
-    if request.method == Methods.POST:
-        username = request.form[Keys.USERNAME]
-        password = request.form[Keys.PASSWORD]
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
 
         try:
             client = get_api_client()
@@ -109,6 +113,8 @@ def login():
                 result = response.json()
                 session["access_token"] = result["access_token"]
                 session["user"] = result["user"]
+
+                app.logger.info(session["user"])
                 flash("Đăng nhập thành công!", "success")
 
                 # Redirect to next page if exists
@@ -142,15 +148,20 @@ def dashboard():
         assets_response = client.get_assets()
         total_assets = assets_response.get("total", 0)
 
+        # Calculate total value
+        all_assets = assets_response.get("assets", [])
+        total_value = sum(asset.get("purchase_value", 0) or 0 for asset in all_assets)
+
         departments = client.get_departments()
         total_departments = len(departments)
 
         # Get recent assets (last 10)
-        recent_assets = assets_response.get("assets", [])[:10]
+        recent_assets = all_assets[:10]
 
         return render_template(
-            "dashboard/index.html",
+            "dashboard.html",
             total_assets=total_assets,
+            total_value=total_value,
             total_departments=total_departments,
             recent_assets=recent_assets,
             departments=departments,
@@ -158,8 +169,9 @@ def dashboard():
     except Exception as e:
         flash(f"Lỗi tải dashboard: {str(e)}", "danger")
         return render_template(
-            "dashboard/index.html",
+            "dashboard.html",
             total_assets=0,
+            total_value=0,
             total_departments=0,
             recent_assets=[],
             departments=[],
@@ -195,31 +207,43 @@ def assets():
         flash("Không thể tải danh sách tài sản", "warning")
 
     return render_template(
-        "assets.html", assets=assets, departments=departments, filters=filters
+        "assets/list.html", assets=assets, departments=departments, filters=filters
     )
 
 
-@app.route("/departments")
+@app.route("/departments", methods=["GET", "POST"])
 @login_required
 @admin_required
 def departments():
-    try:
-        response = requests.get(
-            f"{API_BASE_URL}/departments", headers=get_headers(), timeout=5
-        )
-        departments = response.json() if response.status_code == 200 else []
+    if request.method == "POST":
+        name = request.form["name"]
+        description = request.form["description"]
 
-        # Get users for manager assignment
-        response_users = requests.get(
-            f"{API_BASE_URL}/users", headers=get_headers(), timeout=5
-        )
-        users = response_users.json() if response_users.status_code == 200 else []
+        try:
+            client = get_api_client()
+            response = client.create_department(
+                {
+                    "name": name,
+                    "description": description,
+                }
+            )
+
+        except:
+            # do something
+            ...
+
+    try:
+        client = get_api_client()
+        departments = client.get_departments()
+        users = []  # client.get_users()
     except:
         departments = []
         users = []
         flash("Không thể tải danh sách phòng ban", "warning")
 
-    return render_template("departments.html", departments=departments, users=users)
+    return render_template(
+        "departments/list.html", departments=departments, users=users
+    )
 
 
 @app.route("/users")
@@ -241,7 +265,7 @@ def users():
         departments = []
         flash("Không thể tải danh sách người dùng", "warning")
 
-    return render_template("users.html", users=users, departments=departments)
+    return render_template("users/list.html", users=users, departments=departments)
 
 
 @app.route("/reports")
@@ -278,7 +302,7 @@ def reports():
         flash("Không thể tải dữ liệu báo cáo", "warning")
 
     return render_template(
-        "reports.html",
+        "reports/index.html",
         report_data=report_data,
         departments=departments,
         filters=filters,
@@ -291,6 +315,7 @@ def reports():
 @login_required
 def proxy_api(path):
     url = f"{API_BASE_URL}/{path}"
+    app.logger.info(f"Calling path {url} with method {request.method}")
 
     try:
         if request.method == "GET":

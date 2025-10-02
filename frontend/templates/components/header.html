@@ -5,7 +5,7 @@
         </h2>
         <div class="flex items-center gap-4">
             <span class="text-sm text-gray-600">
-                👤 {{ session.user.full_name }} 
+                👤 {{ session.user.username }} 
                 {% if session.user.department %}
                     - {{ session.user.department.name }}
                 {% endif %}
