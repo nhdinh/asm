@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block page_title %}Cài Đặt Hệ Thống{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6 max-w-4xl mx-auto">
+    <h3 class="text-2xl font-bold mb-6">⚙️ Cài Đặt Hệ Thống</h3>
+
+    <form method="POST" class="space-y-6">
+        <!-- Login Security Settings -->
+        <div class="border rounded-lg p-6 bg-gray-50">
+            <h4 class="text-lg font-semibold mb-4 flex items-center">
+                🔒 Bảo Mật Đăng Nhập
+            </h4>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">
+                        Số lần đăng nhập thất bại trước khi bị khóa
+                    </label>
+                    <input
+                        type="number"
+                        name="login_fail_limit"
+                        min="1"
+                        max="10"
+                        value="{{ settings.get('login_fail_limit', {}).get('value', '5') }}"
+                        required
+                        class="border rounded px-4 py-2 w-full max-w-xs">
+                    <p class="text-xs text-gray-500 mt-1">
+                        Mặc định: 5 lần. Sau số lần này, tài khoản sẽ bị tạm khóa.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium mb-2">
+                        Thời gian khóa tài khoản (phút)
+                    </label>
+                    <input
+                        type="number"
+                        name="login_block_minutes"
+                        min="1"
+                        max="60"
+                        value="{{ settings.get('login_block_minutes', {}).get('value', '5') }}"
+                        required
+                        class="border rounded px-4 py-2 w-full max-w-xs">
+                    <p class="text-xs text-gray-500 mt-1">
+                        Mặc định: 5 phút. Thời gian người dùng phải chờ sau khi bị khóa.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audit Log Settings -->
+        <div class="border rounded-lg p-6 bg-gray-50">
+            <h4 class="text-lg font-semibold mb-4 flex items-center">
+                📝 Audit Log
+            </h4>
+            <div>
+                <label class="block text-sm font-medium mb-2">
+                    Số ngày lưu trữ log trong Redis
+                </label>
+                <input
+                    type="number"
+                    name="audit_archive_days"
+                    min="7"
+                    max="90"
+                    value="{{ settings.get('audit_archive_days', {}).get('value', '30') }}"
+                    required
+                    class="border rounded px-4 py-2 w-full max-w-xs">
+                <p class="text-xs text-gray-500 mt-1">
+                    Mặc định: 30 ngày. Sau thời gian này, log sẽ được lưu xuống file .jsonl.
+                </p>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex gap-4 pt-4">
+            <button
+                type="submit"
+                class="bg-blue-500 text-white px-6 py-3 rounded hover:bg-blue-600 font-medium">
+                💾 Lưu Cài Đặt
+            </button>
+            <a
+                href="{{ url_for('dashboard') }}"
+                class="bg-gray-500 text-white px-6 py-3 rounded hover:bg-gray-600 font-medium">
+                ❌ Hủy
+            </a>
+        </div>
+    </form>
+
+    <!-- Current Settings Display -->
+    <div class="mt-8 border-t pt-6">
+        <h4 class="text-lg font-semibold mb-4">📊 Thông Tin Cài Đặt Hiện Tại</h4>
+        <div class="bg-blue-50 border border-blue-200 rounded p-4">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b">
+                        <th class="text-left py-2 px-3">Tham Số</th>
+                        <th class="text-left py-2 px-3">Giá Trị</th>
+                        <th class="text-left py-2 px-3">Cập Nhật Lần Cuối</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for key, setting in settings.items() %}
+                    <tr class="border-b">
+                        <td class="py-2 px-3 font-medium">{{ setting.description }}</td>
+                        <td class="py-2 px-3">
+                            <span class="bg-green-100 text-green-800 px-2 py-1 rounded">
+                                {{ setting.value }}
+                                {% if setting.data_type == 'int' %}
+                                    {% if 'phút' in setting.description %}phút{% elif 'ngày' in setting.description %}ngày{% else %}lần{% endif %}
+                                {% endif %}
+                            </span>
+                        </td>
+                        <td class="py-2 px-3 text-gray-600">
+                            {{ setting.updated_at|datetime if setting.updated_at else 'Chưa cập nhật' }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Help Section -->
+    <div class="mt-6 bg-yellow-50 border border-yellow-200 rounded p-4">
+        <h5 class="font-semibold mb-2">💡 Lưu Ý:</h5>
+        <ul class="text-sm space-y-1 ml-4 list-disc">
+            <li>Thay đổi cài đặt sẽ được áp dụng ngay lập tức</li>
+            <li>Mọi thay đổi đều được ghi lại trong <a href="{{ url_for('audit_logs') }}" class="text-blue-600 underline">Audit Log</a></li>
+            <li>Chỉ Admin mới có quyền thay đổi cài đặt hệ thống</li>
+            <li>Các giá trị nên được cân nhắc kỹ để đảm bảo tính bảo mật và hiệu suất</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

@@ -18,6 +18,9 @@ db = SQLAlchemy()
 jwt = JWTManager()
 migrate = Migrate()
 
+# Import audit logger
+from audit_logger import audit_logger
+
 db_user = None
 db_password = None
 db_host = None
@@ -59,6 +62,7 @@ def create_app():
     db.init_app(app)
     jwt.init_app(app)
     migrate.init_app(app, db)
+    audit_logger.init_app(app)
 
     CORS(app)
 
@@ -84,13 +88,19 @@ def create_app():
     from routes.departments import dept_bp
     from routes.assets import asset_bp
     from routes.reports import report_bp
-    from routes.users import users_bp  # Add this line
+    from routes.users import users_bp
+    from routes.my_assets import my_assets_bp
+    from routes.audit_logs import audit_logs_bp
+    from routes.settings import settings_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(dept_bp, url_prefix="/api/departments")
     app.register_blueprint(asset_bp, url_prefix="/api/assets")
     app.register_blueprint(report_bp, url_prefix="/api/reports")
     app.register_blueprint(users_bp, url_prefix="/api/users")
+    app.register_blueprint(my_assets_bp, url_prefix="/api/my-assets")
+    app.register_blueprint(audit_logs_bp, url_prefix="/api/audit-logs")
+    app.register_blueprint(settings_bp, url_prefix="/api/settings")
 
     # Health check endpoint
     @app.route("/api/health")

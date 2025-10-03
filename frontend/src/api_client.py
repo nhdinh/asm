@@ -313,3 +313,102 @@ class ApiClient:
         except Exception as e:
             self.app.logger.error(f"Get dashboard stats error: {str(e)}")
             raise
+
+    def get_my_assets(self):
+        """Get assets assigned to current user (for viewers)"""
+        try:
+            response = self.session.get(f"{self.base_url}/my-assets", timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get my assets error: {str(e)}")
+            raise
+
+    def get_my_stats(self):
+        """Get stats for current user's assigned assets"""
+        try:
+            response = self.session.get(
+                f"{self.base_url}/my-assets/stats", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get my stats error: {str(e)}")
+            raise
+
+    # Audit Logs API
+    def get_audit_logs(self, filters=None):
+        """Get audit logs from Redis with optional filters"""
+        try:
+            params = filters or {}
+            response = self.session.get(
+                f"{self.base_url}/audit-logs", params=params, timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get audit logs error: {str(e)}")
+            raise
+
+    def get_archived_logs(self):
+        """Get list of archived audit log files"""
+        try:
+            response = self.session.get(
+                f"{self.base_url}/audit-logs/archived", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get archived logs error: {str(e)}")
+            raise
+
+    def get_archived_log_content(self, filename):
+        """Get content of a specific archived log file"""
+        try:
+            response = self.session.get(
+                f"{self.base_url}/audit-logs/archived/{filename}", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get archived log content error: {str(e)}")
+            raise
+
+    def trigger_log_archive(self):
+        """Manually trigger archival of old logs"""
+        try:
+            response = self.session.post(
+                f"{self.base_url}/audit-logs/archive", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Trigger archive error: {str(e)}")
+            raise
+
+    # Settings API
+    def get_settings(self):
+        """Get all system settings"""
+        try:
+            response = self.session.get(
+                f"{self.base_url}/settings", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get settings error: {str(e)}")
+            raise
+
+    def update_settings(self, settings_data):
+        """Update system settings"""
+        try:
+            response = self.session.put(
+                f"{self.base_url}/settings/bulk",
+                json={"settings": settings_data},
+                timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Update settings error: {str(e)}")
+            raise

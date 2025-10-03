@@ -91,6 +91,17 @@
            class="flex-1 text-center bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">
           Sửa
         </a>
+        {% if session.user and session.user.role == 'admin' %}
+        <button onclick="deleteDepartment({{ dept.id }}, '{{ dept.name }}')"
+                class="flex-1 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                {% if dept.user_count > 0 or dept.asset_count > 0 %}
+                disabled
+                title="Không thể xóa phòng ban có người hoặc tài sản"
+                class="flex-1 bg-gray-300 text-gray-500 px-4 py-2 rounded cursor-not-allowed"
+                {% endif %}>
+          Xóa
+        </button>
+        {% endif %}
       </div>
     </div>
     {% endfor %}
@@ -107,24 +118,22 @@
     const form = document.getElementById("departmentForm");
     const formData = new FormData(form);
     const data = Object.fromEntries(formData);
-    const deptId = document.getElementById("deptId").value;
 
-    const url = deptId ? `/api/departments/${deptId}` : "/api/departments";
-    const method = deptId ? "PUT" : "POST";
+    // Use frontend POST endpoint instead of direct API call
+    const form2 = document.createElement('form');
+    form2.method = 'POST';
+    form2.action = '/departments';
 
-    fetch(url, {
-      method: method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        location.reload();
-      })
-      .catch((error) => {
-        console.error("Error:", error);
-        alert("Đã xảy ra lỗi khi lưu phòng ban!");
-      });
+    for (const [key, value] of Object.entries(data)) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = key;
+      input.value = value;
+      form2.appendChild(input);
+    }
+
+    document.body.appendChild(form2);
+    form2.submit();
   }
 
   function editDepartment(id) {
@@ -140,17 +149,21 @@
       });
   }
 
-  function deleteDepartment(id) {
-    if (confirmDelete("Bạn có chắc chắn muốn xóa phòng ban này?")) {
-      fetch(`/api/departments/${id}`, {
-        method: "DELETE",
-      }).then((response) => {
-        if (response.ok) {
-          location.reload();
-        } else {
-          alert("Không thể xóa phòng ban này!");
-        }
-      });
+  function deleteDepartment(id, name) {
+    if (confirm(`Bạn có chắc chắn muốn xóa phòng ban "${name}"?\n\nPhòng ban này không có người và không có tài sản.`)) {
+      // Create a hidden form to submit DELETE request via frontend
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `/departments/${id}/delete`;
+
+      const methodInput = document.createElement('input');
+      methodInput.type = 'hidden';
+      methodInput.name = '_method';
+      methodInput.value = 'DELETE';
+      form.appendChild(methodInput);
+
+      document.body.appendChild(form);
+      form.submit();
     }
   }
 </script>

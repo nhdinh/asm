@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block page_title %}Tài Sản Của Tôi{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <h2 class="text-2xl font-bold text-gray-800 mb-4">
+        📦 Tài Sản Được Giao Cho Tôi
+    </h2>
+    <p class="text-gray-600">Danh sách các tài sản đang được bàn giao cho bạn quản lý và sử dụng</p>
+</div>
+
+<!-- Statistics Cards -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white p-6 rounded-lg shadow">
+        <div class="text-gray-500 text-sm">Tổng Số Tài Sản</div>
+        <div class="text-3xl font-bold text-blue-600 mt-2">
+            {{ stats.total_count or 0 }}
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow">
+        <div class="text-gray-500 text-sm">Tổng Giá Trị</div>
+        <div class="text-2xl font-bold text-green-600 mt-2">
+            {{ "{:,.0f}".format(stats.total_value) if stats.total_value else '0' }} VNĐ
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow">
+        <div class="text-gray-500 text-sm">Tài Sản Đang Hoạt Động</div>
+        <div class="text-3xl font-bold text-green-500 mt-2">
+            {{ stats.by_status.get('active', 0) }}
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow">
+        <div class="text-gray-500 text-sm">Tài Sản Hư Hỏng</div>
+        <div class="text-3xl font-bold text-yellow-500 mt-2">
+            {{ stats.by_status.get('damaged', 0) }}
+        </div>
+    </div>
+</div>
+
+<!-- Assets by Category -->
+{% if stats.by_category %}
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+    <h3 class="font-bold text-lg mb-4">📊 Tài Sản Theo Loại</h3>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {% for category, count in stats.by_category.items() %}
+        <div class="border rounded p-3 text-center">
+            <div class="text-2xl font-bold text-blue-600">{{ count }}</div>
+            <div class="text-sm text-gray-600 mt-1">{{ category }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Assets Table -->
+<div class="bg-white rounded-lg shadow">
+    <div class="p-6 border-b">
+        <h3 class="font-bold text-lg">Chi Tiết Tài Sản</h3>
+    </div>
+
+    {% if assets and assets|length > 0 %}
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Mã Tài Sản
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Tên Tài Sản
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Loại
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Phòng Ban
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Trạng Thái
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Giá Trị
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Ghi Chú
+                    </th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for asset in assets %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="font-medium text-blue-600">{{ asset.code }}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="font-medium text-gray-900">{{ asset.name }}</div>
+                        {% if asset.description %}
+                        <div class="text-sm text-gray-500">{{ asset.description }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+                            {{ asset.category or 'N/A' }}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">{{ asset.department_name or 'N/A' }}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if asset.status == 'active' %}
+                        <span class="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                            ✓ Hoạt động
+                        </span>
+                        {% elif asset.status == 'damaged' %}
+                        <span class="px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
+                            ⚠ Hư hỏng
+                        </span>
+                        {% elif asset.status == 'disposed' %}
+                        <span class="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">
+                            ✗ Đã thanh lý
+                        </span>
+                        {% else %}
+                        <span class="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+                            {{ asset.status }}
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-medium text-gray-900">
+                            {{ "{:,.0f}".format(asset.purchase_value) if asset.purchase_value else 'N/A' }} VNĐ
+                        </div>
+                        {% if asset.purchase_date %}
+                        <div class="text-xs text-gray-500">Mua: {{ asset.purchase_date|date }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4">
+                        {% if asset.condition_notes %}
+                        <div class="text-sm text-gray-600 max-w-xs truncate" title="{{ asset.condition_notes }}">
+                            {{ asset.condition_notes }}
+                        </div>
+                        {% else %}
+                        <span class="text-gray-400 text-sm">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="p-12 text-center">
+        <div class="text-gray-400 text-6xl mb-4">📦</div>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">Chưa có tài sản nào</h3>
+        <p class="text-gray-500">Hiện tại chưa có tài sản nào được bàn giao cho bạn.</p>
+        <p class="text-gray-500 text-sm mt-2">Vui lòng liên hệ quản lý để được giao tài sản.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Help Section for Viewers -->
+<div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+    <div class="flex items-start">
+        <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+            </svg>
+        </div>
+        <div class="ml-3 flex-1">
+            <h3 class="text-sm font-medium text-blue-800">Thông tin cho người được giao tài sản</h3>
+            <div class="mt-2 text-sm text-blue-700">
+                <ul class="list-disc pl-5 space-y-1">
+                    <li>Bạn có thể xem danh sách tài sản được giao cho mình quản lý</li>
+                    <li>Vui lòng kiểm tra tình trạng tài sản thường xuyên</li>
+                    <li>Nếu phát hiện tài sản hư hỏng, vui lòng báo cáo cho quản lý ngay</li>
+                    <li>Liên hệ quản lý nếu bạn cần thêm thông tin về tài sản</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

@@ -7,6 +7,7 @@ import bcrypt
 class UserRole(Enum):
     ADMIN = "admin"
     MANAGER = "manager"
+    VIEWER = "viewer"
 
 
 class AssetStatus(Enum):
@@ -33,9 +34,10 @@ class User(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
+    fullname = db.Column(db.String(100))
     email = db.Column(db.String(100), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.Enum(UserRole), nullable=False)
+    role = db.Column(db.Enum(UserRole, name='userrole', values_callable=lambda obj: [e.value for e in obj]), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     # Many-to-many relationship with Department
@@ -60,6 +62,7 @@ class User(db.Model):
         return {
             "id": self.id,
             "username": self.username,
+            "fullname": self.fullname,
             "email": self.email,
             "role": self.role.value,
             "departments": [{"id": dept.id, "name": dept.name} for dept in self.departments],
@@ -161,13 +164,15 @@ class AssetTransfer(db.Model):
     asset_id = db.Column(db.Integer, db.ForeignKey("assets.id"), nullable=False)
     from_department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
     to_department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
+    assigned_to_id = db.Column(db.Integer, db.ForeignKey("users.id"))  # User receiving the asset
     transferred_by = db.Column(db.Integer, db.ForeignKey("users.id"))
     transfer_date = db.Column(db.DateTime, default=datetime.utcnow)
     notes = db.Column(db.Text)
 
     from_department = db.relationship("Department", foreign_keys=[from_department_id])
     to_department = db.relationship("Department", foreign_keys=[to_department_id])
-    user = db.relationship("User")
+    assigned_to = db.relationship("User", foreign_keys=[assigned_to_id])
+    transferred_by_user = db.relationship("User", foreign_keys=[transferred_by])
 
     def to_dict(self):
         return {
@@ -177,7 +182,10 @@ class AssetTransfer(db.Model):
                 self.from_department.name if self.from_department else None
             ),
             "to_department": self.to_department.name if self.to_department else None,
-            "transferred_by": self.user.username if self.user else None,
+            "assigned_to": self.assigned_to.fullname if self.assigned_to else None,
+            "assigned_to_username": self.assigned_to.username if self.assigned_to else None,
+            "transferred_by": self.transferred_by_user.username if self.transferred_by_user else None,
+            "transferred_by_fullname": self.transferred_by_user.fullname if self.transferred_by_user else None,
             "transfer_date": self.transfer_date.isoformat(),
             "notes": self.notes,
         }
@@ -210,3 +218,37 @@ class UserActivity(db.Model):
             "status": self.status.value if self.status else None,
             "failed_count": self.failed_count,
         }
+
+
+class SystemSetting(db.Model):
+    """System configuration settings"""
+    __tablename__ = "system_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False)
+    value = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    data_type = db.Column(db.String(20), default="string")  # string, int, float, bool
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "key": self.key,
+            "value": self.value,
+            "description": self.description,
+            "data_type": self.data_type,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "updated_by": self.updated_by,
+        }
+
+    def get_typed_value(self):
+        """Return value converted to appropriate type"""
+        if self.data_type == "int":
+            return int(self.value)
+        elif self.data_type == "float":
+            return float(self.value)
+        elif self.data_type == "bool":
+            return self.value.lower() in ["true", "1", "yes"]
+        return self.value

@@ -4,35 +4,39 @@
         <p class="text-sm text-gray-400 mt-1">Phiên bản 1.0</p>
     </div>
     <nav class="mt-4">
-        <a href="{{ url_for('dashboard') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint == 'main.dashboard' %}active-menu{% endif %}">
-            📈 Dashboard
-        </a>
-        <a href="{{ url_for('assets') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'assets' in request.endpoint %}active-menu{% endif %}">
-            🏢 Quản Lý Tài Sản
-        </a>
-        <a href="{{ url_for('departments') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'departments' in request.endpoint %}active-menu{% endif %}">
-            🏛️ Phòng Ban
-        </a>
-        <a href="#" class="menu-item block px-4 py-3 hover:bg-gray-700">
-            🔄 Điều Chuyển TS
-        </a>
-        <a href="{{ url_for('users') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'users' in request.endpoint %}active-menu{% endif %}">
-            👥 Người Dùng
-        </a>
-        <a href="#" class="menu-item block px-4 py-3 hover:bg-gray-700">
-            ♻️ Vòng Đời Tài Sản
-        </a>
-        <a href="#" class="menu-item block px-4 py-3 hover:bg-gray-700">
-            📦 Kiểm Kê
-        </a>
-        <a href="#" class="menu-item block px-4 py-3 hover:bg-gray-700">
-            🔧 Bảo Trì
-        </a>
-        <a href="{{ url_for('reports') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'reports' in request.endpoint %}active-menu{% endif %}">
-            📊 Báo Cáo
-        </a>
-        <a href="#" class="menu-item block px-4 py-3 hover:bg-gray-700">
-            👥 Phân Quyền
-        </a>
+        {% if session.user and session.user.role == 'viewer' %}
+            {# Viewer menu - only my assets #}
+            <a href="{{ url_for('my_assets') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint == 'my_assets' %}active-menu{% endif %}">
+                📦 Tài Sản Của Tôi
+            </a>
+        {% else %}
+            {# Admin/Manager menu - full access #}
+            <a href="{{ url_for('dashboard') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint == 'dashboard' %}active-menu{% endif %}">
+                📈 Dashboard
+            </a>
+            <a href="{{ url_for('assets') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'assets' in request.endpoint %}active-menu{% endif %}">
+                🏢 Quản Lý Tài Sản
+            </a>
+            <a href="{{ url_for('departments') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'departments' in request.endpoint %}active-menu{% endif %}">
+                🏛️ Phòng Ban
+            </a>
+            <a href="{{ url_for('transfers') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint == 'transfers' %}active-menu{% endif %}">
+                🔄 Điều Chuyển TS
+            </a>
+            {% if session.user and session.user.role == 'admin' %}
+            <a href="{{ url_for('users') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'users' in request.endpoint %}active-menu{% endif %}">
+                👥 Người Dùng
+            </a>
+            <a href="{{ url_for('audit_logs') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint == 'audit_logs' %}active-menu{% endif %}">
+                📝 Nhật Ký Audit
+            </a>
+            <a href="{{ url_for('settings') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint == 'settings' %}active-menu{% endif %}">
+                ⚙️ Cài Đặt
+            </a>
+            {% endif %}
+            <a href="{{ url_for('reports') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'reports' in request.endpoint %}active-menu{% endif %}">
+                📊 Báo Cáo
+            </a>
+        {% endif %}
     </nav>
 </div>

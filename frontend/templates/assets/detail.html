@@ -104,7 +104,8 @@
                     <th class="px-4 py-2 text-left">Ngày Chuyển</th>
                     <th class="px-4 py-2 text-left">Từ Phòng</th>
                     <th class="px-4 py-2 text-left">Đến Phòng</th>
-                    <th class="px-4 py-2 text-left">Người Chuyển</th>
+                    <th class="px-4 py-2 text-left">Bàn Giao Cho</th>
+                    <th class="px-4 py-2 text-left">Người Thực Hiện</th>
                     <th class="px-4 py-2 text-left">Ghi Chú</th>
                 </tr>
             </thead>
@@ -113,8 +114,18 @@
                 <tr class="border-b hover:bg-gray-50">
                     <td class="px-4 py-2">{{ transfer.transfer_date|datetime }}</td>
                     <td class="px-4 py-2">{{ transfer.from_department or '-' }}</td>
-                    <td class="px-4 py-2">{{ transfer.to_department }}</td>
-                    <td class="px-4 py-2">{{ transfer.transferred_by or '-' }}</td>
+                    <td class="px-4 py-2">{{ transfer.to_department or '-' }}</td>
+                    <td class="px-4 py-2">
+                        {% if transfer.assigned_to %}
+                            <span class="font-medium text-blue-600">{{ transfer.assigned_to }}</span>
+                            <span class="text-xs text-gray-500">({{ transfer.assigned_to_username }})</span>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-2">
+                        {{ transfer.transferred_by_fullname or transfer.transferred_by or '-' }}
+                    </td>
                     <td class="px-4 py-2">{{ transfer.notes or '-' }}</td>
                 </tr>
                 {% endfor %}

@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db, Department, User, UserRole, UserActivity, ActivityStatus
+from audit_logger import audit_logger
 
 dept_bp = Blueprint("departments", __name__)
 
@@ -42,6 +43,7 @@ def create_department():
     )
 
     db.session.add(dept)
+    db.session.flush()  # Get dept.id before commit
 
     # Log activity
     activity = UserActivity(
@@ -55,6 +57,18 @@ def create_department():
     )
     db.session.add(activity)
     db.session.commit()
+
+    # Audit log
+    audit_logger.log(
+        user_id=current_user_id,
+        username=current_user.username,
+        action='create',
+        entity_type='department',
+        entity_id=dept.id,
+        new_values=dept.to_dict(),
+        details=f"Created department {dept.name}",
+        ip_address=request.remote_addr
+    )
 
     return jsonify(dept.to_dict()), 201
 
@@ -71,6 +85,9 @@ def update_department(id):
 
         dept = Department.query.get_or_404(id)
         data = request.json
+
+        # Capture old values for audit
+        old_values = dept.to_dict()
 
         dept.name = data.get("name", dept.name)
         dept.description = data.get("description", dept.description)
@@ -102,6 +119,19 @@ def update_department(id):
         db.session.add(activity)
         db.session.commit()
 
+        # Audit log
+        audit_logger.log(
+            user_id=current_user_id,
+            username=current_user.username,
+            action='update',
+            entity_type='department',
+            entity_id=dept.id,
+            old_values=old_values,
+            new_values=dept.to_dict(),
+            details=f"Updated department {dept.name}",
+            ip_address=request.remote_addr
+        )
+
         return jsonify(dept.to_dict())
     except Exception as e:
         db.session.rollback()
@@ -121,10 +151,17 @@ def delete_department(id):
 
     dept = Department.query.get_or_404(id)
 
+    # Check if department has assets
     if dept.assets.count() > 0:
-        return jsonify({"message": "Cannot delete department with assets"}), 400
+        return jsonify({"message": "Không thể xóa phòng ban có tài sản"}), 400
+
+    # Check if department has users
+    if dept.users.count() > 0:
+        return jsonify({"message": "Không thể xóa phòng ban có người"}), 400
 
     dept_name = dept.name
+    old_values = dept.to_dict()
+
     db.session.delete(dept)
 
     # Log activity
@@ -139,5 +176,18 @@ def delete_department(id):
     )
     db.session.add(activity)
     db.session.commit()
+
+    # Audit log
+    audit_logger.log(
+        user_id=current_user_id,
+        username=current_user.username,
+        action='delete',
+        entity_type='department',
+        entity_id=id,
+        old_values=old_values,
+        new_values={},
+        details=f"Deleted department {dept_name}",
+        ip_address=request.remote_addr
+    )
 
     return "", 204

@@ -52,6 +52,18 @@ def admin_required(f):
     return decorated_function
 
 
+def non_viewer_required(f):
+    """Decorator to block viewer role from accessing certain features"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "user" not in session or session["user"].get("role") == "viewer":
+            flash("Chức năng này không khả dụng cho tài khoản Viewer.", "warning")
+            return redirect(url_for("my_assets"))
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
 def get_headers():
     access_token = session.get("access_token")
     return {"Authorization": f"Bearer {access_token}"}
@@ -121,6 +133,11 @@ def login():
                 next_page = request.args.get("next")
                 if next_page:
                     return redirect(next_page)
+
+                # Redirect viewers to my-assets page
+                if session["user"].get("role") == "viewer":
+                    return redirect(url_for("my_assets"))
+
                 return redirect(url_for("dashboard"))
             else:
                 flash("Tên đăng nhập hoặc mật khẩu không đúng", "danger")
@@ -141,6 +158,10 @@ def logout():
 @app.route("/dashboard")
 @login_required
 def dashboard():
+    # Redirect viewers to their my-assets page
+    if session.get("user", {}).get("role") == "viewer":
+        return redirect(url_for("my_assets"))
+
     try:
         client = get_api_client()
 
@@ -179,8 +200,29 @@ def dashboard():
         )
 
 
+@app.route("/my-assets")
+@login_required
+def my_assets():
+    """Page for viewers to see their assigned assets"""
+    try:
+        client = get_api_client()
+        assets = client.get_my_assets()
+        stats = client.get_my_stats()
+
+        return render_template(
+            "my_assets.html",
+            assets=assets,
+            stats=stats,
+        )
+    except Exception as e:
+        app.logger.exception(e)
+        flash(f"Lỗi tải tài sản: {str(e)}", "danger")
+        return render_template("my_assets.html", assets=[], stats={})
+
+
 @app.route("/assets")
 @login_required
+@non_viewer_required
 def assets():
     # Get filter parameters
     filters = {k: v for k, v in request.args.items() if v}
@@ -272,6 +314,7 @@ def create_user():
 
             user_data = {
                 "username": request.form["username"],
+                "fullname": request.form.get("fullname", ""),
                 "email": request.form["email"],
                 "password": request.form["password"],
                 "role": request.form["role"],
@@ -308,6 +351,7 @@ def edit_user(id):
 
             user_data = {
                 "username": request.form["username"],
+                "fullname": request.form.get("fullname", ""),
                 "email": request.form["email"],
                 "role": request.form["role"],
                 "department_ids": [int(d) for d in department_ids if d],
@@ -520,8 +564,29 @@ def edit_department(id):
     return render_template("departments/edit.html", department=department, users=users)
 
 
+@app.route("/departments/<int:id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def delete_department(id):
+    """Delete a department (only if it has no users and no assets)"""
+    try:
+        client = get_api_client()
+        client.delete_department(id)
+        flash("Xóa phòng ban thành công", "success")
+    except Exception as e:
+        app.logger.exception(e)
+        error_msg = str(e)
+        if "có tài sản" in error_msg or "có người" in error_msg:
+            flash(error_msg, "warning")
+        else:
+            flash("Không thể xóa phòng ban", "danger")
+
+    return redirect(url_for("departments"))
+
+
 @app.route("/transfers")
 @login_required
+@non_viewer_required
 def transfers():
     try:
         client = get_api_client()
@@ -552,6 +617,7 @@ def transfers():
 
 @app.route("/reports")
 @login_required
+@non_viewer_required
 def reports():
     report_type = request.args.get("type", "assets")
     filters = {k: v for k, v in request.args.items() if v and k != "type"}
@@ -754,6 +820,123 @@ def export_report():
 @app.route("/health")
 def health_check():
     return {"status": "healthy", "service": "asset-management-frontend"}, 200
+
+
+# ===== Audit Logs =====
+@app.route("/audit-logs")
+@login_required
+@admin_required
+def audit_logs():
+    """Display audit logs page with filters"""
+    client = get_api_client()
+
+    # Get filter parameters
+    filters = {
+        'start_date': request.args.get('start_date'),
+        'end_date': request.args.get('end_date'),
+        'action': request.args.get('action'),
+        'entity_type': request.args.get('entity_type'),
+        'limit': request.args.get('limit', 100)
+    }
+
+    # Remove None values
+    filters = {k: v for k, v in filters.items() if v}
+
+    try:
+        response = client.get_audit_logs(filters)
+        logs = response.get('logs', [])
+        total_count = response.get('total_count', 0)
+
+        return render_template(
+            'audit_logs/list.html',
+            logs=logs,
+            total_count=total_count,
+            filters=request.args
+        )
+    except Exception as e:
+        app.logger.error(f"Error loading audit logs: {str(e)}")
+        flash(f"Lỗi khi tải audit logs: {str(e)}", "danger")
+        return render_template('audit_logs/list.html', logs=[], total_count=0, filters={})
+
+
+@app.route("/api/audit-logs/archived")
+@login_required
+@admin_required
+def get_archived_logs_api():
+    """Get list of archived log files"""
+    client = get_api_client()
+    try:
+        result = client.get_archived_logs()
+        return jsonify(result)
+    except Exception as e:
+        app.logger.error(f"Error getting archived logs: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/audit-logs/archived/<filename>")
+@login_required
+@admin_required
+def get_archived_log_content_api(filename):
+    """Get content of an archived log file"""
+    client = get_api_client()
+    try:
+        result = client.get_archived_log_content(filename)
+        return jsonify(result)
+    except Exception as e:
+        app.logger.error(f"Error getting archived log content: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/audit-logs/archive", methods=["POST"])
+@login_required
+@admin_required
+def trigger_archive_api():
+    """Manually trigger log archival"""
+    client = get_api_client()
+    try:
+        result = client.trigger_log_archive()
+        return jsonify(result)
+    except Exception as e:
+        app.logger.error(f"Error triggering archive: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ===== Settings =====
+@app.route("/settings", methods=["GET", "POST"])
+@login_required
+@admin_required
+def settings():
+    """System settings page"""
+    client = get_api_client()
+
+    if request.method == "POST":
+        try:
+            # Get form data
+            settings_data = {
+                "login_fail_limit": request.form.get("login_fail_limit"),
+                "login_block_minutes": request.form.get("login_block_minutes"),
+                "audit_archive_days": request.form.get("audit_archive_days")
+            }
+
+            # Update settings
+            result = client.update_settings(settings_data)
+            flash("Cập nhật cài đặt thành công", "success")
+            return redirect(url_for("settings"))
+        except Exception as e:
+            app.logger.error(f"Error updating settings: {str(e)}")
+            flash(f"Lỗi khi cập nhật cài đặt: {str(e)}", "danger")
+
+    # Get current settings
+    try:
+        settings_list = client.get_settings()
+        # Convert list to dict for easier access
+        settings_dict = {s["key"]: s for s in settings_list}
+    except Exception as e:
+        app.logger.error(f"Error loading settings: {str(e)}")
+        flash(f"Lỗi khi tải cài đặt: {str(e)}", "danger")
+        settings_dict = {}
+
+    return render_template("settings/index.html", settings=settings_dict)
 
 
 # Error handlers

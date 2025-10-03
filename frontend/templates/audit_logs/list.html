@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+
+{% block page_title %}Nhật Ký Audit{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6">
+    <h3 class="text-2xl font-bold mb-6">Nhật Ký Audit</h3>
+
+    <!-- Filter Form -->
+    <div class="mb-6 bg-gray-50 p-4 rounded">
+        <form method="GET" class="grid grid-cols-4 gap-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Từ Ngày</label>
+                <input type="date" name="start_date" value="{{ filters.start_date or '' }}"
+                       class="border rounded px-3 py-2 w-full">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Đến Ngày</label>
+                <input type="date" name="end_date" value="{{ filters.end_date or '' }}"
+                       class="border rounded px-3 py-2 w-full">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Hành Động</label>
+                <select name="action" class="border rounded px-3 py-2 w-full">
+                    <option value="">Tất cả</option>
+                    <option value="create" {% if filters.action == 'create' %}selected{% endif %}>Tạo mới</option>
+                    <option value="update" {% if filters.action == 'update' %}selected{% endif %}>Cập nhật</option>
+                    <option value="delete" {% if filters.action == 'delete' %}selected{% endif %}>Xóa</option>
+                    <option value="login" {% if filters.action == 'login' %}selected{% endif %}>Đăng nhập</option>
+                    <option value="transfer" {% if filters.action == 'transfer' %}selected{% endif %}>Điều chuyển</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Loại Đối Tượng</label>
+                <select name="entity_type" class="border rounded px-3 py-2 w-full">
+                    <option value="">Tất cả</option>
+                    <option value="asset" {% if filters.entity_type == 'asset' %}selected{% endif %}>Tài sản</option>
+                    <option value="user" {% if filters.entity_type == 'user' %}selected{% endif %}>Người dùng</option>
+                    <option value="department" {% if filters.entity_type == 'department' %}selected{% endif %}>Phòng ban</option>
+                </select>
+            </div>
+            <div class="col-span-4 flex gap-2">
+                <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                    Lọc
+                </button>
+                <a href="{{ url_for('audit_logs') }}"
+                   class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                    Đặt lại
+                </a>
+                <button type="button" onclick="triggerArchive()"
+                        class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 ml-auto">
+                    Lưu Trữ Log Cũ
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Tabs -->
+    <div class="mb-4 border-b">
+        <div class="flex gap-4">
+            <button onclick="showTab('recent')" id="tab-recent"
+                    class="px-4 py-2 font-medium border-b-2 border-blue-500 text-blue-500">
+                Log Gần Đây
+            </button>
+            <button onclick="showTab('archived')" id="tab-archived"
+                    class="px-4 py-2 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                Log Đã Lưu Trữ
+            </button>
+        </div>
+    </div>
+
+    <!-- Recent Logs Tab -->
+    <div id="recent-logs" class="tab-content">
+        {% if logs %}
+        <div class="mb-4 text-sm text-gray-600">
+            Tổng số: {{ total_count }} log | Hiển thị: {{ logs|length }}
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full border text-sm">
+                <thead class="bg-gray-100">
+                    <tr>
+                        <th class="px-3 py-2 text-left">Thời Gian</th>
+                        <th class="px-3 py-2 text-left">Người Dùng</th>
+                        <th class="px-3 py-2 text-left">Hành Động</th>
+                        <th class="px-3 py-2 text-left">Đối Tượng</th>
+                        <th class="px-3 py-2 text-left">Chi Tiết</th>
+                        <th class="px-3 py-2 text-left">IP</th>
+                        <th class="px-3 py-2 text-left">Thao Tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="px-3 py-2 whitespace-nowrap text-xs">{{ log.timestamp }}</td>
+                        <td class="px-3 py-2">
+                            <span class="font-medium">{{ log.username }}</span>
+                            <span class="text-xs text-gray-500">(ID: {{ log.user_id }})</span>
+                        </td>
+                        <td class="px-3 py-2">
+                            <span class="px-2 py-1 rounded text-xs
+                                {% if log.action == 'create' %}bg-green-100 text-green-800
+                                {% elif log.action == 'update' %}bg-blue-100 text-blue-800
+                                {% elif log.action == 'delete' %}bg-red-100 text-red-800
+                                {% elif log.action == 'login' %}bg-purple-100 text-purple-800
+                                {% else %}bg-gray-100 text-gray-800{% endif %}">
+                                {{ log.action }}
+                            </span>
+                        </td>
+                        <td class="px-3 py-2">
+                            {{ log.entity_type }}
+                            {% if log.entity_id %}
+                                <span class="text-xs text-gray-500">#{{ log.entity_id }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-3 py-2 max-w-xs truncate" title="{{ log.details }}">{{ log.details }}</td>
+                        <td class="px-3 py-2 text-xs">{{ log.ip_address or '-' }}</td>
+                        <td class="px-3 py-2">
+                            <button onclick="showLogDetails({{ loop.index0 }})"
+                                    class="text-blue-500 hover:underline text-xs">
+                                Xem
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-gray-500 text-center py-8">Không có log nào</p>
+        {% endif %}
+    </div>
+
+    <!-- Archived Logs Tab -->
+    <div id="archived-logs" class="tab-content hidden">
+        <div id="archived-files-list">
+            <p class="text-gray-500 text-center py-8">Đang tải...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Log Details Modal -->
+<div id="logModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold">Chi Tiết Audit Log</h3>
+            <button onclick="closeModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+        </div>
+        <div id="logDetails" class="space-y-4"></div>
+    </div>
+</div>
+
+<script>
+// Store logs data for modal
+const logsData = {{ logs | tojson | safe }};
+
+function showTab(tabName) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+
+    // Remove active styling from all buttons
+    document.querySelectorAll('[id^="tab-"]').forEach(btn => {
+        btn.classList.remove('border-blue-500', 'text-blue-500');
+        btn.classList.add('border-transparent', 'text-gray-500');
+    });
+
+    // Show selected tab
+    document.getElementById(tabName + '-logs').classList.remove('hidden');
+
+    // Add active styling to selected button
+    const activeBtn = document.getElementById('tab-' + tabName);
+    activeBtn.classList.remove('border-transparent', 'text-gray-500');
+    activeBtn.classList.add('border-blue-500', 'text-blue-500');
+
+    // Load archived files if switching to archived tab
+    if (tabName === 'archived') {
+        loadArchivedFiles();
+    }
+}
+
+function loadArchivedFiles() {
+    fetch('/api/audit-logs/archived')
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('archived-files-list');
+            if (data.files && data.files.length > 0) {
+                let html = '<table class="w-full border"><thead class="bg-gray-100"><tr>';
+                html += '<th class="px-4 py-2 text-left">Tên File</th>';
+                html += '<th class="px-4 py-2 text-left">Kích Thước</th>';
+                html += '<th class="px-4 py-2 text-left">Ngày Tạo</th>';
+                html += '<th class="px-4 py-2 text-left">Thao Tác</th>';
+                html += '</tr></thead><tbody>';
+
+                data.files.forEach(file => {
+                    html += '<tr class="border-b hover:bg-gray-50">';
+                    html += `<td class="px-4 py-2">${file.filename}</td>`;
+                    html += `<td class="px-4 py-2">${formatFileSize(file.size)}</td>`;
+                    html += `<td class="px-4 py-2">${file.created}</td>`;
+                    html += `<td class="px-4 py-2"><button onclick="viewArchivedLog('${file.filename}')" class="text-blue-500 hover:underline">Xem</button></td>`;
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = '<p class="text-gray-500 text-center py-8">Chưa có file lưu trữ</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading archived files:', error);
+            document.getElementById('archived-files-list').innerHTML = '<p class="text-red-500 text-center py-8">Lỗi khi tải danh sách file</p>';
+        });
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+function viewArchivedLog(filename) {
+    fetch(`/api/audit-logs/archived/${filename}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.logs && data.logs.length > 0) {
+                // Show in modal similar to recent logs
+                showArchivedLogDetails(data.logs);
+            }
+        })
+        .catch(error => {
+            alert('Lỗi khi tải nội dung file: ' + error.message);
+        });
+}
+
+function showArchivedLogDetails(logs) {
+    let html = '<div class="overflow-x-auto"><table class="w-full border text-sm">';
+    html += '<thead class="bg-gray-100"><tr>';
+    html += '<th class="px-3 py-2 text-left">Thời Gian</th>';
+    html += '<th class="px-3 py-2 text-left">Người Dùng</th>';
+    html += '<th class="px-3 py-2 text-left">Hành Động</th>';
+    html += '<th class="px-3 py-2 text-left">Chi Tiết</th>';
+    html += '</tr></thead><tbody>';
+
+    logs.forEach(log => {
+        html += '<tr class="border-b">';
+        html += `<td class="px-3 py-2 text-xs">${log.timestamp}</td>`;
+        html += `<td class="px-3 py-2">${log.username}</td>`;
+        html += `<td class="px-3 py-2">${log.action}</td>`;
+        html += `<td class="px-3 py-2">${log.details || '-'}</td>`;
+        html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+
+    document.getElementById('logDetails').innerHTML = html;
+    document.getElementById('logModal').classList.remove('hidden');
+    document.getElementById('logModal').classList.add('flex');
+}
+
+function showLogDetails(index) {
+    const log = logsData[index];
+    let html = `
+        <div class="grid grid-cols-2 gap-4">
+            <div><strong>Thời Gian:</strong> ${log.timestamp}</div>
+            <div><strong>Người Dùng:</strong> ${log.username} (ID: ${log.user_id})</div>
+            <div><strong>Hành Động:</strong> ${log.action}</div>
+            <div><strong>Loại Đối Tượng:</strong> ${log.entity_type}</div>
+            <div><strong>ID Đối Tượng:</strong> ${log.entity_id || '-'}</div>
+            <div><strong>IP Address:</strong> ${log.ip_address || '-'}</div>
+            <div class="col-span-2"><strong>Chi Tiết:</strong> ${log.details || '-'}</div>
+        </div>
+    `;
+
+    if (log.old_values && Object.keys(log.old_values).length > 0) {
+        html += '<div class="mt-4"><strong>Giá Trị Cũ:</strong><pre class="bg-gray-100 p-3 rounded mt-2 text-xs overflow-x-auto">' +
+                JSON.stringify(log.old_values, null, 2) + '</pre></div>';
+    }
+
+    if (log.new_values && Object.keys(log.new_values).length > 0) {
+        html += '<div class="mt-4"><strong>Giá Trị Mới:</strong><pre class="bg-gray-100 p-3 rounded mt-2 text-xs overflow-x-auto">' +
+                JSON.stringify(log.new_values, null, 2) + '</pre></div>';
+    }
+
+    document.getElementById('logDetails').innerHTML = html;
+    document.getElementById('logModal').classList.remove('hidden');
+    document.getElementById('logModal').classList.add('flex');
+}
+
+function closeModal() {
+    document.getElementById('logModal').classList.add('hidden');
+    document.getElementById('logModal').classList.remove('flex');
+}
+
+function triggerArchive() {
+    if (confirm('Bạn có chắc muốn lưu trữ các log cũ hơn 30 ngày?')) {
+        fetch('/api/audit-logs/archive', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                alert(`Đã lưu trữ ${data.archived_count} log thành công!`);
+                location.reload();
+            })
+            .catch(error => {
+                alert('Lỗi khi lưu trữ: ' + error.message);
+            });
+    }
+}
+
+// Close modal when clicking outside
+document.getElementById('logModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeModal();
+    }
+});
+</script>
+{% endblock %}

@@ -18,6 +18,7 @@ services:
     secrets:
       - postgres_user
       - postgres_password
+      - redis_password
     ports:
       - 5000:5000
     volumes:
@@ -31,6 +32,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:5000/api/health" ]
@@ -40,6 +44,7 @@ services:
       start_period: 40s
     depends_on:
       - postgres
+      - redis
     networks:
       - asset-network
 

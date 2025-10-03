@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db, Asset, AssetStatus, AssetTransfer, User, UserRole, UserActivity, ActivityStatus
 from datetime import datetime
+from audit_logger import audit_logger
 
 asset_bp = Blueprint("assets", __name__)
 
@@ -20,6 +21,10 @@ def get_assets():
     current_user_id = get_jwt_identity()
     current_user = User.query.get(current_user_id)
 
+    # Viewers should use /api/my-assets endpoint
+    if current_user.role == UserRole.VIEWER:
+        return jsonify({"message": "Viewers should use /api/my-assets endpoint"}), 403
+
     query = Asset.query
 
     # Filter by department for managers - only show assets from their departments
@@ -32,6 +37,7 @@ def get_assets():
     department_id = request.args.get("department_id")
     status = request.args.get("status")
     category = request.args.get("category")
+    search = request.args.get("search")
 
     if department_id:
         query = query.filter_by(department_id=department_id)
@@ -39,6 +45,16 @@ def get_assets():
         query = query.filter_by(status=AssetStatus[status.upper()])
     if category:
         query = query.filter_by(category=category)
+    if search:
+        # Search in code, name, description
+        search_filter = f"%{search}%"
+        query = query.filter(
+            db.or_(
+                Asset.code.ilike(search_filter),
+                Asset.name.ilike(search_filter),
+                Asset.description.ilike(search_filter)
+            )
+        )
 
     assets = query.all()
     return jsonify([asset.to_dict() for asset in assets])
@@ -49,6 +65,10 @@ def get_assets():
 def create_asset():
     current_user_id = get_jwt_identity()
     current_user = User.query.get(current_user_id)
+
+    # Viewers cannot create assets
+    if current_user.role == UserRole.VIEWER:
+        return jsonify({"message": "Unauthorized - viewers cannot create assets"}), 403
 
     data = request.json
 
@@ -79,6 +99,18 @@ def create_asset():
     )
 
     db.session.add(asset)
+    db.session.flush()  # Get asset.id before commit
+
+    # Create transfer record if asset is assigned to a user
+    if data.get("assigned_to_id"):
+        transfer = AssetTransfer(
+            asset_id=asset.id,
+            to_department_id=data["department_id"],
+            assigned_to_id=data["assigned_to_id"],
+            transferred_by=current_user_id,
+            notes=f"Bàn giao tài sản lần đầu tiên"
+        )
+        db.session.add(transfer)
 
     # Log activity
     activity = UserActivity(
@@ -93,6 +125,18 @@ def create_asset():
     db.session.add(activity)
     db.session.commit()
 
+    # Audit log
+    audit_logger.log(
+        user_id=current_user_id,
+        username=current_user.username,
+        action='create',
+        entity_type='asset',
+        entity_id=asset.id,
+        new_values=asset.to_dict(),
+        details=f"Created asset {asset.code}",
+        ip_address=request.remote_addr
+    )
+
     return jsonify(asset.to_dict()), 201
 
 
@@ -102,11 +146,18 @@ def update_asset(id):
     current_user_id = get_jwt_identity()
     current_user = User.query.get(current_user_id)
 
+    # Viewers cannot update assets
+    if current_user.role == UserRole.VIEWER:
+        return jsonify({"message": "Unauthorized - viewers cannot update assets"}), 403
+
     asset = Asset.query.get_or_404(id)
 
     # Check permissions
     if not user_has_access_to_department(current_user, asset.department_id):
         return jsonify({"message": "Unauthorized - no access to this asset's department"}), 403
+
+    # Capture old values for audit
+    old_values = asset.to_dict()
 
     data = request.json
 
@@ -121,9 +172,25 @@ def update_asset(id):
     if data.get("status"):
         asset.status = AssetStatus[data["status"].upper()]
 
+    # Track if assigned_to changed
+    old_assigned_to = asset.assigned_to_id
+
     # Update new fields
     if "assigned_to_id" in data:
-        asset.assigned_to_id = data.get("assigned_to_id")
+        new_assigned_to = data.get("assigned_to_id")
+        asset.assigned_to_id = new_assigned_to
+
+        # Create transfer record if assignment changed
+        if new_assigned_to != old_assigned_to and new_assigned_to is not None:
+            transfer = AssetTransfer(
+                asset_id=asset.id,
+                to_department_id=asset.department_id,
+                assigned_to_id=new_assigned_to,
+                transferred_by=current_user_id,
+                notes=f"Bàn giao tài sản {'lần đầu tiên' if old_assigned_to is None else 'cho người dùng mới'}"
+            )
+            db.session.add(transfer)
+
     if "condition_notes" in data:
         asset.condition_notes = data.get("condition_notes")
 
@@ -140,6 +207,19 @@ def update_asset(id):
     db.session.add(activity)
     db.session.commit()
 
+    # Audit log
+    audit_logger.log(
+        user_id=current_user_id,
+        username=current_user.username,
+        action='update',
+        entity_type='asset',
+        entity_id=asset.id,
+        old_values=old_values,
+        new_values=asset.to_dict(),
+        details=f"Updated asset {asset.code}",
+        ip_address=request.remote_addr
+    )
+
     return jsonify(asset.to_dict())
 
 
@@ -148,6 +228,10 @@ def update_asset(id):
 def transfer_asset(id):
     current_user_id = get_jwt_identity()
     current_user = User.query.get(current_user_id)
+
+    # Viewers cannot transfer assets
+    if current_user.role == UserRole.VIEWER:
+        return jsonify({"message": "Unauthorized - viewers cannot transfer assets"}), 403
 
     asset = Asset.query.get_or_404(id)
     data = request.json
@@ -186,6 +270,19 @@ def transfer_asset(id):
     db.session.add(activity)
     db.session.commit()
 
+    # Audit log
+    audit_logger.log(
+        user_id=current_user_id,
+        username=current_user.username,
+        action='transfer',
+        entity_type='asset',
+        entity_id=asset.id,
+        old_values={'department_id': transfer.from_department_id},
+        new_values={'department_id': transfer.to_department_id, 'transfer_id': transfer.id},
+        details=f"Transferred asset {asset.code} from dept {transfer.from_department_id} to {transfer.to_department_id}",
+        ip_address=request.remote_addr
+    )
+
     return jsonify(transfer.to_dict()), 201
 
 
@@ -210,6 +307,10 @@ def delete_asset(id):
     current_user_id = get_jwt_identity()
     current_user = User.query.get(current_user_id)
 
+    # Viewers cannot delete assets
+    if current_user.role == UserRole.VIEWER:
+        return jsonify({"message": "Unauthorized - viewers cannot delete assets"}), 403
+
     asset = Asset.query.get_or_404(id)
 
     # Check permissions
@@ -217,6 +318,8 @@ def delete_asset(id):
         return jsonify({"message": "Unauthorized - no access to this asset's department"}), 403
 
     asset_code = asset.code
+    old_values = asset.to_dict()
+
     db.session.delete(asset)
 
     # Log activity
@@ -231,6 +334,19 @@ def delete_asset(id):
     )
     db.session.add(activity)
     db.session.commit()
+
+    # Audit log
+    audit_logger.log(
+        user_id=current_user_id,
+        username=current_user.username,
+        action='delete',
+        entity_type='asset',
+        entity_id=id,
+        old_values=old_values,
+        new_values={},
+        details=f"Deleted asset {asset_code}",
+        ip_address=request.remote_addr
+    )
 
     return "", 204
 

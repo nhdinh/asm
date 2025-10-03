@@ -11,6 +11,12 @@
             <div>
                 <label class="block text-sm font-medium mb-1">Tên Đăng Nhập *</label>
                 <input type="text" name="username" value="{{ user.username }}" required
+                       class="border rounded px-3 py-2 w-full bg-gray-100" readonly>
+                <p class="text-xs text-gray-500 mt-1">Chỉ Admin mới có thể thay đổi</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Họ Tên</label>
+                <input type="text" name="fullname" value="{{ user.fullname or '' }}"
                        class="border rounded px-3 py-2 w-full">
             </div>
             <div>
@@ -21,8 +27,9 @@
             <div>
                 <label class="block text-sm font-medium mb-1">Vai Trò *</label>
                 <select name="role" required class="border rounded px-3 py-2 w-full">
-                    <option value="manager" {% if user.role == 'manager' %}selected{% endif %}>Manager</option>
                     <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
+                    <option value="manager" {% if user.role == 'manager' %}selected{% endif %}>Manager</option>
+                    <option value="viewer" {% if user.role == 'viewer' %}selected{% endif %}>Viewer</option>
                 </select>
             </div>
             <div class="col-span-2">

@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db, User, UserRole, UserActivity, Department, ActivityStatus
+from audit_logger import audit_logger
 
 users_bp = Blueprint("users", __name__)
 
@@ -44,7 +45,14 @@ def update_user(id):
         user = User.query.get_or_404(id)
         data = request.json
 
-        user.username = data.get("username", user.username)
+        # Capture old values for audit
+        old_values = user.to_dict()
+
+        # Only admin can change username
+        if "username" in data and data.get("username") != user.username:
+            user.username = data["username"]
+
+        user.fullname = data.get("fullname", user.fullname)
         user.email = data.get("email", user.email)
         if data.get("role"):
             user.role = UserRole[data["role"].upper()]
@@ -70,6 +78,19 @@ def update_user(id):
         db.session.add(activity)
         db.session.commit()
 
+        # Audit log
+        audit_logger.log(
+            user_id=current_user_id,
+            username=current_user.username,
+            action='update',
+            entity_type='user',
+            entity_id=user.id,
+            old_values=old_values,
+            new_values=user.to_dict(),
+            details=f"Updated user {user.username}",
+            ip_address=request.remote_addr
+        )
+
         return jsonify(user.to_dict())
     except Exception as e:
         db.session.rollback()
@@ -92,6 +113,8 @@ def delete_user(id):
 
     user = User.query.get_or_404(id)
     username = user.username
+    old_values = user.to_dict()
+
     db.session.delete(user)
 
     # Log activity
@@ -106,6 +129,19 @@ def delete_user(id):
     )
     db.session.add(activity)
     db.session.commit()
+
+    # Audit log
+    audit_logger.log(
+        user_id=current_user_id,
+        username=current_user.username,
+        action='delete',
+        entity_type='user',
+        entity_id=id,
+        old_values=old_values,
+        new_values={},
+        details=f"Deleted user {username}",
+        ip_address=request.remote_addr
+    )
 
     return "", 204
 
@@ -136,5 +172,18 @@ def reset_password(id):
     )
     db.session.add(activity)
     db.session.commit()
+
+    # Audit log
+    audit_logger.log(
+        user_id=current_user_id,
+        username=current_user.username,
+        action='reset_password',
+        entity_type='user',
+        entity_id=user.id,
+        old_values={'password': '[REDACTED]'},
+        new_values={'password': '[REDACTED]'},
+        details=f"Reset password for user {user.username}",
+        ip_address=request.remote_addr
+    )
 
     return jsonify({"message": "Password reset successfully"}), 200
