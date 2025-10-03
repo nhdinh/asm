@@ -1,50 +1,45 @@
 {% extends "base.html" %}
 
-{% block page_title %}Thêm Tài Sản{% endblock %}
+{% block page_title %}Sửa Tài Sản{% endblock %}
 
 {% block content %}
 <div class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
-    <h3 class="text-lg font-bold mb-4">Thêm Tài Sản Mới</h3>
+    <h3 class="text-lg font-bold mb-4">Sửa Thông Tin Tài Sản</h3>
 
     <form method="POST">
         <div class="grid grid-cols-2 gap-4">
             <div>
                 <label class="block text-sm font-medium mb-1">Mã Tài Sản</label>
-                <input type="text" name="code" required class="border rounded px-3 py-2 w-full">
+                <input type="text" value="{{ asset.code }}" disabled
+                       class="border rounded px-3 py-2 w-full bg-gray-100">
+                <p class="text-xs text-gray-500 mt-1">Mã tài sản không thể thay đổi</p>
             </div>
             <div>
-                <label class="block text-sm font-medium mb-1">Tên Tài Sản</label>
-                <input type="text" name="name" required class="border rounded px-3 py-2 w-full">
+                <label class="block text-sm font-medium mb-1">Tên Tài Sản *</label>
+                <input type="text" name="name" value="{{ asset.name }}" required
+                       class="border rounded px-3 py-2 w-full">
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">Loại</label>
-                <input type="text" name="category" class="border rounded px-3 py-2 w-full"
-                       placeholder="VD: Máy tính, Thiết bị văn phòng">
+                <input type="text" name="category" value="{{ asset.category or '' }}"
+                       class="border rounded px-3 py-2 w-full">
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">Giá Trị (VNĐ)</label>
-                <input type="number" name="purchase_value" class="border rounded px-3 py-2 w-full"
-                       placeholder="0">
+                <input type="number" name="purchase_value" value="{{ asset.purchase_value or 0 }}"
+                       class="border rounded px-3 py-2 w-full">
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">Ngày Mua</label>
-                <input type="date" name="purchase_date" class="border rounded px-3 py-2 w-full">
-            </div>
-            <div>
-                <label class="block text-sm font-medium mb-1">Phòng Ban *</label>
-                <select name="department_id" required class="border rounded px-3 py-2 w-full">
-                    <option value="">Chọn phòng ban</option>
-                    {% for dept in departments %}
-                        <option value="{{ dept.id }}">{{ dept.name }}</option>
-                    {% endfor %}
-                </select>
+                <input type="date" name="purchase_date" value="{{ asset.purchase_date or '' }}"
+                       class="border rounded px-3 py-2 w-full">
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">Trạng Thái</label>
                 <select name="status" class="border rounded px-3 py-2 w-full">
-                    <option value="active">Hoạt động</option>
-                    <option value="damaged">Hư hỏng</option>
-                    <option value="disposed">Đã thanh lý</option>
+                    <option value="active" {% if asset.status == 'active' %}selected{% endif %}>Hoạt động</option>
+                    <option value="damaged" {% if asset.status == 'damaged' %}selected{% endif %}>Hư hỏng</option>
+                    <option value="disposed" {% if asset.status == 'disposed' %}selected{% endif %}>Đã thanh lý</option>
                 </select>
             </div>
             <div>
@@ -54,7 +49,9 @@
                     {% for dept in departments %}
                         <optgroup label="{{ dept.name }}">
                             {% for user in users if user.departments and dept.id in (user.departments | map(attribute='id') | list) %}
-                                <option value="{{ user.id }}">{{ user.username }} ({{ user.email }})</option>
+                                <option value="{{ user.id }}" {% if asset.assigned_to_id == user.id %}selected{% endif %}>
+                                    {{ user.username }} ({{ user.email }})
+                                </option>
                             {% endfor %}
                         </optgroup>
                     {% endfor %}
@@ -62,19 +59,19 @@
             </div>
             <div class="col-span-2">
                 <label class="block text-sm font-medium mb-1">Mô Tả</label>
-                <textarea name="description" rows="3" class="border rounded px-3 py-2 w-full"
-                          placeholder="Nhập mô tả chi tiết về tài sản..."></textarea>
+                <textarea name="description" rows="3"
+                          class="border rounded px-3 py-2 w-full">{{ asset.description or '' }}</textarea>
             </div>
             <div class="col-span-2">
                 <label class="block text-sm font-medium mb-1">Tình Trạng Chi Tiết</label>
-                <textarea name="condition_notes" rows="2" class="border rounded px-3 py-2 w-full"
-                          placeholder="VD: Vỡ góc trái, bị xước mặt trước, chưa bị hỏng chức năng..."></textarea>
+                <textarea name="condition_notes" rows="3" placeholder="VD: Bị xước ở góc trên bên trái, màn hình hoạt động tốt..."
+                          class="border rounded px-3 py-2 w-full">{{ asset.condition_notes or '' }}</textarea>
             </div>
         </div>
 
         <div class="mt-6 flex gap-2">
             <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
-                Tạo Tài Sản
+                Lưu Thay Đổi
             </button>
             <a href="{{ url_for('assets') }}"
                class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">

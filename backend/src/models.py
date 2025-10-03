@@ -20,6 +20,14 @@ class ActivityStatus(Enum):
     SUCCESS = "success"
 
 
+# Association table for many-to-many relationship between User and Department
+user_departments = db.Table('user_departments',
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
+    db.Column('department_id', db.Integer, db.ForeignKey('departments.id'), primary_key=True),
+    db.Column('assigned_at', db.DateTime, default=datetime.utcnow)
+)
+
+
 class User(db.Model):
     __tablename__ = "users"
 
@@ -28,12 +36,14 @@ class User(db.Model):
     email = db.Column(db.String(100), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.Enum(UserRole), nullable=False)
-    department_id = db.Column(
-        db.Integer, db.ForeignKey("departments.id"), nullable=True
-    )
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    department = db.relationship("Department", backref="managers")
+    # Many-to-many relationship with Department
+    departments = db.relationship(
+        "Department",
+        secondary=user_departments,
+        backref=db.backref("users", lazy="dynamic")
+    )
     activities = db.relationship("UserActivity", backref="user", lazy="dynamic")
 
     def set_password(self, password):
@@ -52,7 +62,7 @@ class User(db.Model):
             "username": self.username,
             "email": self.email,
             "role": self.role.value,
-            "department_id": self.department_id,
+            "departments": [{"id": dept.id, "name": dept.name} for dept in self.departments],
             "created_at": self.created_at.isoformat(),
         }
 
@@ -77,7 +87,7 @@ class Department(db.Model):
             "description": self.description,
             "created_at": self.created_at.isoformat(),
             "asset_count": self.assets.count(),
-            "user_count": self.user_count,
+            "user_count": self.users.count(),
             "total_value": self.total_value,
         }
 
@@ -96,12 +106,18 @@ class Asset(db.Model):
         db.Integer, db.ForeignKey("departments.id"), nullable=False
     )
     status = db.Column(db.Enum(AssetStatus), default=AssetStatus.ACTIVE)
+
+    # New fields for asset assignment and condition
+    assigned_to_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    condition_notes = db.Column(db.Text)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
     transfers = db.relationship("AssetTransfer", backref="asset", lazy="dynamic")
+    assigned_to = db.relationship("User", foreign_keys=[assigned_to_id])
 
     def to_dict(self):
         return {
@@ -117,6 +133,9 @@ class Asset(db.Model):
             "department_id": self.department_id,
             "department_name": self.department.name if self.department else None,
             "status": self.status.value,
+            "assigned_to_id": self.assigned_to_id,
+            "assigned_to_name": self.assigned_to.username if self.assigned_to else None,
+            "condition_notes": self.condition_notes,
             "created_at": self.created_at.isoformat(),
         }
 
@@ -168,12 +187,12 @@ class UserActivity(db.Model):
         return {
             "id": self.id,
             "user_id": self.user_id,
-            "username": self.user.username if self.user else None,
+            "username": self.username,
             "action": self.action,
             "entity_type": self.entity_type,
             "entity_id": self.entity_id,
             "timestamp": self.timestamp.isoformat(),
             "details": self.details,
-            "status": self.status,
+            "status": self.status.value if self.status else None,
             "failed_count": self.failed_count,
         }

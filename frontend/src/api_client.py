@@ -55,7 +55,7 @@ class ApiClient:
     def create_asset(self, asset_data: "Asset"):
         try:
             response = self.session.post(
-                f"{self.base_url}/api/assets", json=asset_data, timeout=10
+                f"{self.base_url}/assets", json=asset_data, timeout=10
             )
 
             self.app.logger.info(self.session)
@@ -68,7 +68,7 @@ class ApiClient:
     def update_asset(self, asset_id, asset_data):
         try:
             response = self.session.put(
-                f"{self.base_url}/api/assets/{asset_id}", json=asset_data, timeout=10
+                f"{self.base_url}/assets/{asset_id}", json=asset_data, timeout=10
             )
             response.raise_for_status()
             return response.json()
@@ -89,7 +89,7 @@ class ApiClient:
     def create_department(self, department_data):
         try:
             response = self.session.post(
-                f"{self.base_url}/api/departments", json=department_data, timeout=10
+                f"{self.base_url}/departments", json=department_data, timeout=10
             )
 
             self.app.logger.info(self.session)
@@ -102,7 +102,7 @@ class ApiClient:
     def transfer_asset(self, asset_id, transfer_data):
         try:
             response = self.session.post(
-                f"{self.base_url}/api/assets/{asset_id}/transfer",
+                f"{self.base_url}/assets/{asset_id}/transfer",
                 json=transfer_data,
                 timeout=10,
             )
@@ -115,7 +115,7 @@ class ApiClient:
     def get_asset_transfers(self, asset_id):
         try:
             response = self.session.get(
-                f"{self.base_url}/api/assets/{asset_id}/transfers", timeout=10
+                f"{self.base_url}/assets/{asset_id}/transfers", timeout=10
             )
             response.raise_for_status()
             return response.json()
@@ -126,7 +126,7 @@ class ApiClient:
     def get_reports_by_department(self):
         try:
             response = self.session.get(
-                f"{self.base_url}/api/reports/assets-by-department", timeout=10
+                f"{self.base_url}/reports/assets-by-department", timeout=10
             )
             response.raise_for_status()
             return response.json()
@@ -137,10 +137,179 @@ class ApiClient:
     def get_reports_by_status(self):
         try:
             response = self.session.get(
-                f"{self.base_url}/api/reports/assets-by-status", timeout=10
+                f"{self.base_url}/reports/assets-by-status", timeout=10
             )
             response.raise_for_status()
             return response.json()
         except Exception as e:
             self.app.logger.error(f"Get status report error: {str(e)}")
+            raise
+
+    # Users API
+    def get_users(self):
+        try:
+            response = self.session.get(f"{self.base_url}/users", timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get users error: {str(e)}")
+            raise
+
+    def get_user(self, user_id):
+        try:
+            response = self.session.get(f"{self.base_url}/users/{user_id}", timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get user error: {str(e)}")
+            raise
+
+    def create_user(self, user_data):
+        try:
+            response = self.session.post(
+                f"{self.base_url}/auth/register", json=user_data, timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Create user error: {str(e)}")
+            raise
+
+    def update_user(self, user_id, user_data):
+        try:
+            response = self.session.put(
+                f"{self.base_url}/users/{user_id}", json=user_data, timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Update user error: {str(e)}")
+            raise
+
+    def delete_user(self, user_id):
+        try:
+            response = self.session.delete(
+                f"{self.base_url}/users/{user_id}", timeout=10
+            )
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            self.app.logger.error(f"Delete user error: {str(e)}")
+            raise
+
+    def reset_user_password(self, user_id, password_data):
+        try:
+            response = self.session.post(
+                f"{self.base_url}/users/{user_id}/reset-password",
+                json=password_data,
+                timeout=10,
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Reset password error: {str(e)}")
+            raise
+
+    # Department API
+    def get_department(self, department_id):
+        try:
+            response = self.session.get(
+                f"{self.base_url}/departments/{department_id}", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get department error: {str(e)}")
+            raise
+
+    def update_department(self, department_id, department_data):
+        try:
+            response = self.session.put(
+                f"{self.base_url}/departments/{department_id}",
+                json=department_data,
+                timeout=10,
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Update department error: {str(e)}")
+            raise
+
+    def delete_department(self, department_id):
+        try:
+            response = self.session.delete(
+                f"{self.base_url}/departments/{department_id}", timeout=10
+            )
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            self.app.logger.error(f"Delete department error: {str(e)}")
+            raise
+
+    # Asset API
+    def get_asset(self, asset_id):
+        try:
+            response = self.session.get(f"{self.base_url}/assets/{asset_id}", timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get asset error: {str(e)}")
+            raise
+
+    def delete_asset(self, asset_id):
+        try:
+            response = self.session.delete(
+                f"{self.base_url}/assets/{asset_id}", timeout=10
+            )
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            self.app.logger.error(f"Delete asset error: {str(e)}")
+            raise
+
+    def get_asset_history(self, asset_id):
+        try:
+            response = self.session.get(
+                f"{self.base_url}/assets/{asset_id}/history", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get asset history error: {str(e)}")
+            raise
+
+    # Reports API
+    def get_asset_report(self, filters=None):
+        try:
+            params = filters or {}
+            response = self.session.get(
+                f"{self.base_url}/reports/assets", params=params, timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get asset report error: {str(e)}")
+            raise
+
+    def get_user_activity_report(self, filters=None):
+        try:
+            params = filters or {}
+            response = self.session.get(
+                f"{self.base_url}/reports/user-activities", params=params, timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get user activity report error: {str(e)}")
+            raise
+
+    def get_dashboard_stats(self):
+        try:
+            response = self.session.get(
+                f"{self.base_url}/reports/dashboard", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get dashboard stats error: {str(e)}")
             raise

@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, Asset, AssetStatus, AssetTransfer, User, UserRole, UserActivity
+from models import db, Asset, AssetStatus, AssetTransfer, User, UserRole, UserActivity, ActivityStatus
 from datetime import datetime
 
 asset_bp = Blueprint("assets", __name__)
@@ -63,18 +63,21 @@ def create_asset():
         ),
         department_id=data["department_id"],
         status=AssetStatus[data.get("status", "ACTIVE").upper()],
+        assigned_to_id=data.get("assigned_to_id"),
+        condition_notes=data.get("condition_notes"),
     )
 
     db.session.add(asset)
-    db.session.commit()
 
     # Log activity
     activity = UserActivity(
         user_id=current_user_id,
+        username=current_user.username,
         action="create_asset",
         entity_type="asset",
         entity_id=asset.id,
         details=f"Created asset {asset.code}",
+        status=ActivityStatus.SUCCESS,
     )
     db.session.add(activity)
     db.session.commit()
@@ -108,15 +111,21 @@ def update_asset(id):
     if data.get("status"):
         asset.status = AssetStatus[data["status"].upper()]
 
-    db.session.commit()
+    # Update new fields
+    if "assigned_to_id" in data:
+        asset.assigned_to_id = data.get("assigned_to_id")
+    if "condition_notes" in data:
+        asset.condition_notes = data.get("condition_notes")
 
     # Log activity
     activity = UserActivity(
         user_id=current_user_id,
+        username=current_user.username,
         action="update_asset",
         entity_type="asset",
         entity_id=asset.id,
         details=f"Updated asset {asset.code}",
+        status=ActivityStatus.SUCCESS,
     )
     db.session.add(activity)
     db.session.commit()
@@ -154,20 +163,69 @@ def transfer_asset(id):
     asset.department_id = data["to_department_id"]
 
     db.session.add(transfer)
-    db.session.commit()
 
     # Log activity
     activity = UserActivity(
         user_id=current_user_id,
+        username=current_user.username,
         action="transfer_asset",
         entity_type="asset",
         entity_id=asset.id,
         details=f"Transferred asset {asset.code} from dept {transfer.from_department_id} to {transfer.to_department_id}",
+        status=ActivityStatus.SUCCESS,
     )
     db.session.add(activity)
     db.session.commit()
 
     return jsonify(transfer.to_dict()), 201
+
+
+@asset_bp.route("/<int:id>", methods=["GET"])
+@jwt_required()
+def get_asset(id):
+    current_user_id = get_jwt_identity()
+    current_user = User.query.get(current_user_id)
+
+    asset = Asset.query.get_or_404(id)
+
+    # Check permissions
+    if current_user.role == UserRole.MANAGER:
+        if asset.department_id != current_user.department_id:
+            return jsonify({"message": "Unauthorized"}), 403
+
+    return jsonify(asset.to_dict())
+
+
+@asset_bp.route("/<int:id>", methods=["DELETE"])
+@jwt_required()
+def delete_asset(id):
+    current_user_id = get_jwt_identity()
+    current_user = User.query.get(current_user_id)
+
+    asset = Asset.query.get_or_404(id)
+
+    # Check permissions
+    if current_user.role == UserRole.MANAGER:
+        if asset.department_id != current_user.department_id:
+            return jsonify({"message": "Unauthorized"}), 403
+
+    asset_code = asset.code
+    db.session.delete(asset)
+
+    # Log activity
+    activity = UserActivity(
+        user_id=current_user_id,
+        username=current_user.username,
+        action="delete_asset",
+        entity_type="asset",
+        entity_id=id,
+        details=f"Deleted asset {asset_code}",
+        status=ActivityStatus.SUCCESS,
+    )
+    db.session.add(activity)
+    db.session.commit()
+
+    return "", 204
 
 
 @asset_bp.route("/<int:id>/history", methods=["GET"])

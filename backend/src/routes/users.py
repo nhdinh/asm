@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, User, UserRole, UserActivity
+from models import db, User, UserRole, UserActivity, Department, ActivityStatus
 
 users_bp = Blueprint("users", __name__)
 
@@ -34,35 +34,48 @@ def get_user(id):
 @users_bp.route("/<int:id>", methods=["PUT"])
 @jwt_required()
 def update_user(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    try:
+        current_user_id = get_jwt_identity()
+        current_user = User.query.get(current_user_id)
 
-    if current_user.role != UserRole.ADMIN:
-        return jsonify({"message": "Unauthorized"}), 403
+        if current_user.role != UserRole.ADMIN:
+            return jsonify({"message": "Unauthorized"}), 403
 
-    user = User.query.get_or_404(id)
-    data = request.json
+        user = User.query.get_or_404(id)
+        data = request.json
 
-    user.username = data.get("username", user.username)
-    user.email = data.get("email", user.email)
-    if data.get("role"):
-        user.role = UserRole[data["role"].upper()]
-    user.department_id = data.get("department_id", user.department_id)
+        user.username = data.get("username", user.username)
+        user.email = data.get("email", user.email)
+        if data.get("role"):
+            user.role = UserRole[data["role"].upper()]
 
-    db.session.commit()
+        # Update departments (many-to-many relationship)
+        if "department_ids" in data:
+            user.departments = []
+            for dept_id in data["department_ids"]:
+                dept = Department.query.get(dept_id)
+                if dept:
+                    user.departments.append(dept)
 
-    # Log activity
-    activity = UserActivity(
-        user_id=current_user_id,
-        action="update_user",
-        entity_type="user",
-        entity_id=user.id,
-        details=f"Updated user {user.username}",
-    )
-    db.session.add(activity)
-    db.session.commit()
+        # Log activity
+        activity = UserActivity(
+            user_id=current_user_id,
+            username=current_user.username,
+            action="update_user",
+            entity_type="user",
+            entity_id=user.id,
+            details=f"Updated user {user.username}",
+            status=ActivityStatus.SUCCESS,
+        )
+        db.session.add(activity)
+        db.session.commit()
 
-    return jsonify(user.to_dict())
+        return jsonify(user.to_dict())
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        traceback.print_exc()
+        return jsonify({"message": f"Error updating user: {str(e)}"}), 500
 
 
 @users_bp.route("/<int:id>", methods=["DELETE"])
@@ -78,16 +91,18 @@ def delete_user(id):
         return jsonify({"message": "Cannot delete yourself"}), 400
 
     user = User.query.get_or_404(id)
+    username = user.username
     db.session.delete(user)
-    db.session.commit()
 
     # Log activity
     activity = UserActivity(
         user_id=current_user_id,
+        username=current_user.username,
         action="delete_user",
         entity_type="user",
         entity_id=id,
-        details=f"Deleted user {user.username}",
+        details=f"Deleted user {username}",
+        status=ActivityStatus.SUCCESS,
     )
     db.session.add(activity)
     db.session.commit()
@@ -108,15 +123,16 @@ def reset_password(id):
     data = request.json
 
     user.set_password(data["password"])
-    db.session.commit()
 
     # Log activity
     activity = UserActivity(
         user_id=current_user_id,
+        username=current_user.username,
         action="reset_password",
         entity_type="user",
         entity_id=user.id,
         details=f"Reset password for user {user.username}",
+        status=ActivityStatus.SUCCESS,
     )
     db.session.add(activity)
     db.session.commit()

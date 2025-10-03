@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block page_title %}Chi Tiết Tài Sản{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-6">
+        <h3 class="text-2xl font-bold">Chi Tiết Tài Sản</h3>
+        <div class="flex gap-2">
+            <a href="{{ url_for('edit_asset', id=asset.id) }}"
+               class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">
+                Sửa
+            </a>
+            <a href="{{ url_for('transfer_asset', id=asset.id) }}"
+               class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                Điều Chuyển
+            </a>
+            <a href="{{ url_for('assets') }}"
+               class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                Quay Lại
+            </a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-6 mb-8">
+        <div>
+            <h4 class="font-bold text-lg mb-4 text-blue-600">Thông Tin Cơ Bản</h4>
+            <table class="w-full">
+                <tr class="border-b">
+                    <td class="py-2 font-medium text-gray-600">Mã Tài Sản:</td>
+                    <td class="py-2">{{ asset.code }}</td>
+                </tr>
+                <tr class="border-b">
+                    <td class="py-2 font-medium text-gray-600">Tên Tài Sản:</td>
+                    <td class="py-2 font-bold">{{ asset.name }}</td>
+                </tr>
+                <tr class="border-b">
+                    <td class="py-2 font-medium text-gray-600">Loại:</td>
+                    <td class="py-2">{{ asset.category or '-' }}</td>
+                </tr>
+                <tr class="border-b">
+                    <td class="py-2 font-medium text-gray-600">Trạng Thái:</td>
+                    <td class="py-2">
+                        <span class="px-3 py-1 rounded text-sm
+                            {% if asset.status == 'active' %}bg-green-100 text-green-800
+                            {% elif asset.status == 'damaged' %}bg-yellow-100 text-yellow-800
+                            {% else %}bg-red-100 text-red-800{% endif %}">
+                            {% if asset.status == 'active' %}Hoạt động
+                            {% elif asset.status == 'damaged' %}Hư hỏng
+                            {% else %}Đã thanh lý{% endif %}
+                        </span>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <div>
+            <h4 class="font-bold text-lg mb-4 text-blue-600">Thông Tin Tài Chính</h4>
+            <table class="w-full">
+                <tr class="border-b">
+                    <td class="py-2 font-medium text-gray-600">Giá Trị:</td>
+                    <td class="py-2 font-bold text-green-600">{{ "{:,.0f}".format(asset.purchase_value or 0) }} VNĐ</td>
+                </tr>
+                <tr class="border-b">
+                    <td class="py-2 font-medium text-gray-600">Ngày Mua:</td>
+                    <td class="py-2">{{ asset.purchase_date|date if asset.purchase_date else '-' }}</td>
+                </tr>
+                <tr class="border-b">
+                    <td class="py-2 font-medium text-gray-600">Phòng Ban:</td>
+                    <td class="py-2">{{ asset.department_name or '-' }}</td>
+                </tr>
+                <tr class="border-b">
+                    <td class="py-2 font-medium text-gray-600">Bàn Giao Cho:</td>
+                    <td class="py-2">{{ asset.assigned_to_name or '-' }}</td>
+                </tr>
+                <tr class="border-b">
+                    <td class="py-2 font-medium text-gray-600">Ngày Tạo:</td>
+                    <td class="py-2">{{ asset.created_at|datetime if asset.created_at else '-' }}</td>
+                </tr>
+            </table>
+        </div>
+
+        {% if asset.description %}
+        <div class="col-span-2">
+            <h4 class="font-bold text-lg mb-2 text-blue-600">Mô Tả</h4>
+            <p class="text-gray-700 bg-gray-50 p-4 rounded">{{ asset.description }}</p>
+        </div>
+        {% endif %}
+
+        {% if asset.condition_notes %}
+        <div class="col-span-2">
+            <h4 class="font-bold text-lg mb-2 text-blue-600">Tình Trạng Chi Tiết</h4>
+            <p class="text-gray-700 bg-yellow-50 p-4 rounded border-l-4 border-yellow-500">{{ asset.condition_notes }}</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="mt-8">
+        <h4 class="font-bold text-lg mb-4 text-blue-600">Lịch Sử Điều Chuyển</h4>
+        {% if history %}
+        <table class="w-full border">
+            <thead class="bg-gray-100">
+                <tr>
+                    <th class="px-4 py-2 text-left">Ngày Chuyển</th>
+                    <th class="px-4 py-2 text-left">Từ Phòng</th>
+                    <th class="px-4 py-2 text-left">Đến Phòng</th>
+                    <th class="px-4 py-2 text-left">Người Chuyển</th>
+                    <th class="px-4 py-2 text-left">Ghi Chú</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for transfer in history %}
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="px-4 py-2">{{ transfer.transfer_date|datetime }}</td>
+                    <td class="px-4 py-2">{{ transfer.from_department or '-' }}</td>
+                    <td class="px-4 py-2">{{ transfer.to_department }}</td>
+                    <td class="px-4 py-2">{{ transfer.transferred_by or '-' }}</td>
+                    <td class="px-4 py-2">{{ transfer.notes or '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-gray-500 text-center py-8">Chưa có lịch sử điều chuyển</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

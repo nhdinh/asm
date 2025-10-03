@@ -3,7 +3,7 @@ import os
 from flask import Blueprint, json, request, jsonify, current_app
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from sqlalchemy import desc
-from models import ActivityStatus, db, User, UserRole, UserActivity
+from models import ActivityStatus, db, User, UserRole, UserActivity, Department
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -104,9 +104,16 @@ def register():
             username=data["username"],
             email=data["email"],
             role=UserRole[data["role"].upper()],
-            department_id=data.get("department_id"),
         )
         user.set_password(data["password"])
+
+        # Add departments (many-to-many relationship)
+        if "department_ids" in data:
+            for dept_id in data["department_ids"]:
+                dept = Department.query.get(dept_id)
+                if dept:
+                    user.departments.append(dept)
+
         db.session.add(user)
 
         log_auth_activity(

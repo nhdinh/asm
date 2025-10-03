@@ -6,44 +6,43 @@
 <div class="bg-white rounded-lg shadow p-6">
     <div class="flex justify-between mb-4">
         <h3 class="text-lg font-bold">Lịch Sử Điều Chuyển</h3>
-        <button onclick="alert('Chức năng đang phát triển')"
+        <a href="{{ url_for('assets') }}"
                 class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-            + Tạo Phiếu
-        </button>
+            ← Quay lại Tài sản
+        </a>
     </div>
+    <p class="text-sm text-gray-600 mb-4">Để tạo phiếu điều chuyển mới, vui lòng chọn "Điều chuyển" từ danh sách tài sản.</p>
 
     <table class="w-full border">
         <thead class="bg-gray-100">
             <tr>
-                <th class="px-4 py-2 text-left">Mã Phiếu</th>
+                <th class="px-4 py-2 text-left">ID</th>
                 <th class="px-4 py-2 text-left">Tài Sản</th>
-                <th class="px-4 py-2 text-left">Từ</th>
-                <th class="px-4 py-2 text-left">Đến</th>
-                <th class="px-4 py-2 text-left">Ngày</th>
-                <th class="px-4 py-2 text-left">Trạng Thái</th>
-                <th class="px-4 py-2 text-left">Thao Tác</th>
+                <th class="px-4 py-2 text-left">Từ Phòng</th>
+                <th class="px-4 py-2 text-left">Đến Phòng</th>
+                <th class="px-4 py-2 text-left">Người Chuyển</th>
+                <th class="px-4 py-2 text-left">Ngày Chuyển</th>
+                <th class="px-4 py-2 text-left">Ghi Chú</th>
             </tr>
         </thead>
         <tbody>
             {% for transfer in transfers %}
-            <tr class="border-b">
-                <td class="px-4 py-2">{{ transfer.transfer_code }}</td>
-                <td class="px-4 py-2">{{ transfer.asset.code }}</td>
-                <td class="px-4 py-2">{{ transfer.from_department.name if transfer.from_department else '-' }}</td>
-                <td class="px-4 py-2">{{ transfer.to_department.name }}</td>
-                <td class="px-4 py-2">{{ transfer.transfer_date.strftime('%d/%m/%Y') }}</td>
+            <tr class="border-b hover:bg-gray-50">
+                <td class="px-4 py-2">{{ transfer.id }}</td>
                 <td class="px-4 py-2">
-                    <span class="px-2 py-1 rounded text-sm
-                        {% if transfer.status == 'pending' %}bg-yellow-100 text-yellow-800
-                        {% else %}bg-green-100 text-green-800{% endif %}">
-                        {{ 'Chờ duyệt' if transfer.status == 'pending' else 'Đã duyệt' }}
-                    </span>
+                    <div class="font-medium">{{ transfer.asset.code if transfer.asset else '-' }}</div>
+                    <div class="text-sm text-gray-500">{{ transfer.asset.name if transfer.asset else '-' }}</div>
                 </td>
-                <td class="px-4 py-2">
-                    {% if transfer.status == 'pending' %}
-                        <button onclick="alert('Chức năng đang phát triển')"
-                                class="text-green-500 hover:underline">Duyệt</button>
-                    {% endif %}
+                <td class="px-4 py-2">{{ transfer.from_department or '-' }}</td>
+                <td class="px-4 py-2">{{ transfer.to_department or '-' }}</td>
+                <td class="px-4 py-2">{{ transfer.transferred_by or '-' }}</td>
+                <td class="px-4 py-2">{{ transfer.transfer_date|datetime if transfer.transfer_date else '-' }}</td>
+                <td class="px-4 py-2">{{ transfer.notes or '-' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="7" class="px-4 py-8 text-center text-gray-500">
+                    Chưa có lịch sử điều chuyển nào
                 </td>
             </tr>
             {% endfor %}

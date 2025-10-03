@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block page_title %}Sửa Phòng Ban{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+    <h3 class="text-lg font-bold mb-4">Sửa Thông Tin Phòng Ban</h3>
+
+    <form method="POST">
+        <div class="grid grid-cols-1 gap-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Tên Phòng Ban *</label>
+                <input type="text" name="name" value="{{ department.name }}" required
+                       class="border rounded px-3 py-2 w-full">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Mô Tả</label>
+                <textarea name="description" rows="3"
+                          class="border rounded px-3 py-2 w-full">{{ department.description or '' }}</textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Thành Viên</label>
+                <div class="border rounded px-3 py-2 max-h-60 overflow-y-auto">
+                    {% for user in users %}
+                    <div class="flex items-center mb-2">
+                        <input type="checkbox" name="user_ids" value="{{ user.id }}"
+                               id="user_{{ user.id }}" class="mr-2"
+                               {% if user.departments and department.id in (user.departments | map(attribute='id') | list) %}checked{% endif %}>
+                        <label for="user_{{ user.id }}" class="cursor-pointer">
+                            {{ user.username }} ({{ user.email }})
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+                <p class="text-xs text-gray-500 mt-1">Chọn các thành viên thuộc phòng ban này</p>
+            </div>
+        </div>
+
+        <div class="mt-6 flex gap-2">
+            <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                Lưu Thay Đổi
+            </button>
+            <a href="{{ url_for('departments') }}"
+               class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                Hủy
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

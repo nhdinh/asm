@@ -29,7 +29,15 @@
                 <td class="px-4 py-3">{{ user.username }}</td>
                 <td class="px-4 py-3">{{ user.email or '-' }}</td>
                 <td class="px-4 py-3">{{ user.full_name or '-' }}</td>
-                <td class="px-4 py-3">{{ user.department_name or '-' }}</td>
+                <td class="px-4 py-3">
+                    {% if user.departments %}
+                        {% for dept in user.departments %}
+                            <span class="inline-block bg-gray-200 rounded px-2 py-1 text-xs mr-1 mb-1">{{ dept.name }}</span>
+                        {% endfor %}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
                 <td class="px-4 py-3">
                     <span class="px-2 py-1 rounded text-xs {% if user.role == 'admin' %}bg-red-100 text-red-800{% elif user.role == 'manager' %}bg-blue-100 text-blue-800{% else %}bg-gray-100 text-gray-800{% endif %}">
                         {{ user.role|upper }}
@@ -55,19 +63,31 @@
 
 <script>
 function showAddUserModal() {
-    // TODO: Implement add user modal
-    alert('Chức năng đang phát triển');
+    window.location.href = "{{ url_for('create_user') }}";
 }
 
 function editUser(userId) {
-    // TODO: Implement edit user
-    alert('Chức năng đang phát triển: Sửa người dùng ' + userId);
+    window.location.href = "/users/" + userId + "/edit";
 }
 
 function deleteUser(userId) {
     if (confirm('Bạn có chắc chắn muốn xóa người dùng này?')) {
-        // TODO: Implement delete user
-        alert('Chức năng đang phát triển: Xóa người dùng ' + userId);
+        fetch('/api/users/' + userId, {
+            method: 'DELETE'
+        })
+        .then(response => {
+            if (response.ok) {
+                alert('Xóa người dùng thành công!');
+                location.reload();
+            } else {
+                return response.json().then(data => {
+                    throw new Error(data.message || 'Không thể xóa người dùng');
+                });
+            }
+        })
+        .catch(error => {
+            alert('Lỗi: ' + error.message);
+        });
     }
 }
 </script>

@@ -144,29 +144,29 @@ def dashboard():
     try:
         client = get_api_client()
 
-        # Get summary statistics
-        assets_response = client.get_assets()
-        total_assets = assets_response.get("total", 0)
+        # Get dashboard statistics from backend
+        stats = client.get_dashboard_stats()
 
-        # Calculate total value
-        all_assets = assets_response.get("assets", [])
-        total_value = sum(asset.get("purchase_value", 0) or 0 for asset in all_assets)
+        # Get recent assets
+        assets_response = client.get_assets()
+        all_assets = assets_response if isinstance(assets_response, list) else []
+        recent_assets = all_assets[:10]
 
         departments = client.get_departments()
-        total_departments = len(departments)
-
-        # Get recent assets (last 10)
-        recent_assets = all_assets[:10]
 
         return render_template(
             "dashboard.html",
-            total_assets=total_assets,
-            total_value=total_value,
-            total_departments=total_departments,
+            total_assets=stats.get("total_assets", 0),
+            total_value=sum(
+                asset.get("purchase_value", 0) or 0 for asset in all_assets
+            ),
+            total_departments=stats.get("total_departments", 0),
             recent_assets=recent_assets,
             departments=departments,
+            assets_by_status=stats.get("assets_by_status", {}),
         )
     except Exception as e:
+        app.logger.exception(e)
         flash(f"Lỗi tải dashboard: {str(e)}", "danger")
         return render_template(
             "dashboard.html",
@@ -175,6 +175,7 @@ def dashboard():
             total_departments=0,
             recent_assets=[],
             departments=[],
+            assets_by_status={},
         )
 
 
@@ -182,26 +183,19 @@ def dashboard():
 @login_required
 def assets():
     # Get filter parameters
-    filters = {
-        "search": request.args.get("search", ""),
-        "category": request.args.get("category", ""),
-        "status": request.args.get("status", ""),
-        "department_id": request.args.get("department_id", ""),
-    }
+    filters = {k: v for k, v in request.args.items() if v}
 
     try:
+        client = get_api_client()
+
         # Get assets with filters
-        response = requests.get(
-            f"{API_BASE_URL}/assets", params=filters, headers=get_headers(), timeout=5
-        )
-        assets = response.json() if response.status_code == 200 else []
+        assets = client.get_assets(filters)
+        assets = assets if isinstance(assets, list) else []
 
         # Get departments for filter
-        response_dept = requests.get(
-            f"{API_BASE_URL}/departments", headers=get_headers(), timeout=5
-        )
-        departments = response_dept.json() if response_dept.status_code == 200 else []
-    except:
+        departments = client.get_departments()
+    except Exception as e:
+        app.logger.exception(e)
         assets = []
         departments = []
         flash("Không thể tải danh sách tài sản", "warning")
@@ -221,22 +215,24 @@ def departments():
 
         try:
             client = get_api_client()
-            response = client.create_department(
+            client.create_department(
                 {
                     "name": name,
                     "description": description,
                 }
             )
-
-        except:
-            # do something
-            ...
+            flash("Tạo phòng ban thành công", "success")
+            return redirect(url_for("departments"))
+        except Exception as e:
+            app.logger.exception(e)
+            flash("Không thể tạo phòng ban", "danger")
 
     try:
         client = get_api_client()
         departments = client.get_departments()
-        users = []  # client.get_users()
-    except:
+        users = client.get_users()
+    except Exception as e:
+        app.logger.exception(e)
         departments = []
         users = []
         flash("Không thể tải danh sách phòng ban", "warning")
@@ -251,21 +247,307 @@ def departments():
 @admin_required
 def users():
     try:
-        response = requests.get(
-            f"{API_BASE_URL}/users", headers=get_headers(), timeout=5
-        )
-        users = response.json() if response.status_code == 200 else []
-
-        response_dept = requests.get(
-            f"{API_BASE_URL}/departments", headers=get_headers(), timeout=5
-        )
-        departments = response_dept.json() if response_dept.status_code == 200 else []
-    except:
+        client = get_api_client()
+        users = client.get_users()
+        departments = client.get_departments()
+    except Exception as e:
+        app.logger.exception(e)
         users = []
         departments = []
         flash("Không thể tải danh sách người dùng", "warning")
 
     return render_template("users/list.html", users=users, departments=departments)
+
+
+@app.route("/users/create", methods=["GET", "POST"])
+@login_required
+@admin_required
+def create_user():
+    if request.method == "POST":
+        try:
+            client = get_api_client()
+
+            # Get department IDs from form
+            department_ids = request.form.getlist("department_ids")
+
+            user_data = {
+                "username": request.form["username"],
+                "email": request.form["email"],
+                "password": request.form["password"],
+                "role": request.form["role"],
+                "department_ids": [int(d) for d in department_ids if d],
+            }
+
+            client.create_user(user_data)
+            flash("Tạo người dùng thành công", "success")
+            return redirect(url_for("users"))
+        except Exception as e:
+            app.logger.exception(e)
+            flash(f"Không thể tạo người dùng: {str(e)}", "danger")
+
+    try:
+        client = get_api_client()
+        departments = client.get_departments()
+    except Exception as e:
+        app.logger.exception(e)
+        departments = []
+
+    return render_template("users/create.html", departments=departments)
+
+
+@app.route("/users/<int:id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def edit_user(id):
+    if request.method == "POST":
+        try:
+            client = get_api_client()
+
+            # Get department IDs from form
+            department_ids = request.form.getlist("department_ids")
+
+            user_data = {
+                "username": request.form["username"],
+                "email": request.form["email"],
+                "role": request.form["role"],
+                "department_ids": [int(d) for d in department_ids if d],
+            }
+
+            client.update_user(id, user_data)
+            flash("Cập nhật người dùng thành công", "success")
+            return redirect(url_for("users"))
+        except Exception as e:
+            app.logger.exception(e)
+            flash(f"Không thể cập nhật người dùng: {str(e)}", "danger")
+
+    try:
+        client = get_api_client()
+        user = client.get_user(id)
+        departments = client.get_departments()
+    except Exception as e:
+        app.logger.exception(e)
+        flash("Không thể tải thông tin người dùng", "danger")
+        return redirect(url_for("users"))
+
+    return render_template("users/edit.html", user=user, departments=departments)
+
+
+@app.route("/assets/create", methods=["GET", "POST"])
+@login_required
+def create_asset():
+    if request.method == "POST":
+        try:
+            client = get_api_client()
+
+            asset_data = {
+                "code": request.form["code"],
+                "name": request.form["name"],
+                "description": request.form.get("description", ""),
+                "category": request.form.get("category", ""),
+                "purchase_value": float(request.form.get("purchase_value", 0)),
+                "purchase_date": request.form.get("purchase_date"),
+                "department_id": int(request.form["department_id"]),
+                "status": request.form.get("status", "active"),
+                "assigned_to_id": (
+                    int(request.form["assigned_to_id"])
+                    if request.form.get("assigned_to_id")
+                    else None
+                ),
+                "condition_notes": request.form.get("condition_notes", ""),
+            }
+
+            client.create_asset(asset_data)
+            flash("Tạo tài sản thành công", "success")
+            return redirect(url_for("assets"))
+        except Exception as e:
+            app.logger.exception(e)
+            flash(f"Không thể tạo tài sản: {str(e)}", "danger")
+
+    try:
+        client = get_api_client()
+        departments = client.get_departments()
+        users = client.get_users()
+    except Exception as e:
+        app.logger.exception(e)
+        departments = []
+        users = []
+
+    return render_template("assets/create.html", departments=departments, users=users)
+
+
+@app.route("/assets/<int:id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_asset(id):
+    if request.method == "POST":
+        try:
+            client = get_api_client()
+
+            asset_data = {
+                "name": request.form["name"],
+                "description": request.form.get("description", ""),
+                "category": request.form.get("category", ""),
+                "purchase_value": float(request.form.get("purchase_value", 0)),
+                "purchase_date": request.form.get("purchase_date"),
+                "status": request.form.get("status", "active"),
+                "assigned_to_id": (
+                    int(request.form["assigned_to_id"])
+                    if request.form.get("assigned_to_id")
+                    else None
+                ),
+                "condition_notes": request.form.get("condition_notes", ""),
+            }
+
+            client.update_asset(id, asset_data)
+            flash("Cập nhật tài sản thành công", "success")
+            return redirect(url_for("assets"))
+        except Exception as e:
+            app.logger.exception(e)
+            flash(f"Không thể cập nhật tài sản: {str(e)}", "danger")
+
+    try:
+        client = get_api_client()
+        asset = client.get_asset(id)
+        departments = client.get_departments()
+        users = client.get_users()
+    except Exception as e:
+        app.logger.exception(e)
+        flash("Không thể tải thông tin tài sản", "danger")
+        return redirect(url_for("assets"))
+
+    return render_template(
+        "assets/edit.html", asset=asset, departments=departments, users=users
+    )
+
+
+@app.route("/assets/<int:id>/detail")
+@login_required
+def asset_detail(id):
+    try:
+        client = get_api_client()
+        asset = client.get_asset(id)
+        history = client.get_asset_history(id)
+    except Exception as e:
+        app.logger.exception(e)
+        flash("Không thể tải thông tin tài sản", "danger")
+        return redirect(url_for("assets"))
+
+    return render_template("assets/detail.html", asset=asset, history=history)
+
+
+@app.route("/assets/<int:id>/transfer", methods=["GET", "POST"])
+@login_required
+def transfer_asset(id):
+    if request.method == "POST":
+        try:
+            client = get_api_client()
+
+            transfer_data = {
+                "to_department_id": int(request.form["to_department_id"]),
+                "notes": request.form.get("notes", ""),
+            }
+
+            client.transfer_asset(id, transfer_data)
+            flash("Chuyển tài sản thành công", "success")
+            return redirect(url_for("asset_detail", id=id))
+        except Exception as e:
+            app.logger.exception(e)
+            flash(f"Không thể chuyển tài sản: {str(e)}", "danger")
+
+    try:
+        client = get_api_client()
+        asset = client.get_asset(id)
+        departments = client.get_departments()
+    except Exception as e:
+        app.logger.exception(e)
+        flash("Không thể tải thông tin tài sản", "danger")
+        return redirect(url_for("assets"))
+
+    return render_template(
+        "transfers/create.html", asset=asset, departments=departments
+    )
+
+
+@app.route("/departments/<int:id>")
+@login_required
+def department_detail(id):
+    try:
+        client = get_api_client()
+        department = client.get_department(id)
+        assets = client.get_assets({"department_id": id})
+    except Exception as e:
+        app.logger.exception(e)
+        flash("Không thể tải thông tin phòng ban", "danger")
+        return redirect(url_for("departments"))
+
+    return render_template(
+        "departments/detail.html", department=department, assets=assets
+    )
+
+
+@app.route("/departments/<int:id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def edit_department(id):
+    if request.method == "POST":
+        try:
+            client = get_api_client()
+
+            # Get user IDs from form
+            user_ids = request.form.getlist("user_ids")
+
+            department_data = {
+                "name": request.form["name"],
+                "description": request.form.get("description", ""),
+                "user_ids": [int(u) for u in user_ids if u],
+            }
+
+            client.update_department(id, department_data)
+            flash("Cập nhật phòng ban thành công", "success")
+            return redirect(url_for("departments"))
+        except Exception as e:
+            app.logger.exception(e)
+            flash(f"Không thể cập nhật phòng ban: {str(e)}", "danger")
+
+    try:
+        client = get_api_client()
+        department = client.get_department(id)
+        users = client.get_users()
+    except Exception as e:
+        app.logger.exception(e)
+        flash("Không thể tải thông tin phòng ban", "danger")
+        return redirect(url_for("departments"))
+
+    return render_template("departments/edit.html", department=department, users=users)
+
+
+@app.route("/transfers")
+@login_required
+def transfers():
+    try:
+        client = get_api_client()
+        # Get all assets to show transfer history
+        assets = client.get_assets()
+
+        # Collect all transfers from assets
+        all_transfers = []
+        for asset in assets if isinstance(assets, list) else []:
+            try:
+                history = client.get_asset_history(asset["id"])
+                for transfer in history:
+                    transfer["asset"] = asset
+                    all_transfers.append(transfer)
+            except:
+                pass
+
+        # Sort by date
+        all_transfers.sort(key=lambda x: x.get("transfer_date", ""), reverse=True)
+
+    except Exception as e:
+        app.logger.exception(e)
+        all_transfers = []
+        flash("Không thể tải lịch sử điều chuyển", "warning")
+
+    return render_template("transfers/list.html", transfers=all_transfers)
 
 
 @app.route("/reports")
@@ -276,35 +558,33 @@ def reports():
 
     report_data = None
     departments = []
+    users_list = []
 
     try:
+        client = get_api_client()
+
         # Get departments for filter
-        response_dept = requests.get(
-            f"{API_BASE_URL}/departments", headers=get_headers(), timeout=5
-        )
-        departments = response_dept.json() if response_dept.status_code == 200 else []
+        departments = client.get_departments()
+
+        # Get users for user activity filter (admin only)
+        if session.get("user", {}).get("role") == "admin":
+            users_list = client.get_users()
 
         # Get report data if filters are provided
-        if filters:
+        if filters or report_type:
             if report_type == "user-activities":
-                endpoint = "/reports/user-activities"
+                report_data = client.get_user_activity_report(filters)
             else:
-                endpoint = "/reports/assets"
-
-            response = requests.get(
-                f"{API_BASE_URL}{endpoint}",
-                params=filters,
-                headers=get_headers(),
-                timeout=5,
-            )
-            report_data = response.json() if response.status_code == 200 else None
-    except:
+                report_data = client.get_asset_report(filters)
+    except Exception as e:
+        app.logger.exception(e)
         flash("Không thể tải dữ liệu báo cáo", "warning")
 
     return render_template(
         "reports/index.html",
         report_data=report_data,
         departments=departments,
+        users=users_list,
         filters=filters,
         report_type=report_type,
     )
@@ -347,10 +627,9 @@ def proxy_api(path):
 @login_required
 def export_assets():
     try:
-        response = requests.get(
-            f"{API_BASE_URL}/assets", headers=get_headers(), timeout=5
-        )
-        assets = response.json() if response.status_code == 200 else []
+        client = get_api_client()
+        assets = client.get_assets()
+        assets = assets if isinstance(assets, list) else []
 
         # Create CSV
         output = io.StringIO()
@@ -388,7 +667,8 @@ def export_assets():
             as_attachment=True,
             download_name=f'assets_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
         )
-    except:
+    except Exception as e:
+        app.logger.exception(e)
         flash("Không thể xuất dữ liệu", "danger")
         return redirect(url_for("assets"))
 
@@ -400,18 +680,12 @@ def export_report():
     filters = {k: v for k, v in request.args.items() if v and k != "type"}
 
     try:
-        if report_type == "user-activities":
-            endpoint = "/reports/user-activities"
-        else:
-            endpoint = "/reports/assets"
+        client = get_api_client()
 
-        response = requests.get(
-            f"{API_BASE_URL}{endpoint}",
-            params=filters,
-            headers=get_headers(),
-            timeout=5,
-        )
-        data = response.json() if response.status_code == 200 else {}
+        if report_type == "user-activities":
+            data = client.get_user_activity_report(filters)
+        else:
+            data = client.get_asset_report(filters)
 
         # Create Excel-compatible CSV
         output = io.StringIO()
@@ -440,6 +714,28 @@ def export_report():
                         "status": asset.get("status", ""),
                     }
                 )
+        elif report_type == "user-activities" and "activities" in data:
+            writer = csv.DictWriter(
+                output,
+                fieldnames=[
+                    "username",
+                    "action",
+                    "entity_type",
+                    "timestamp",
+                    "details",
+                ],
+            )
+            writer.writeheader()
+            for activity in data["activities"]:
+                writer.writerow(
+                    {
+                        "username": activity.get("username", ""),
+                        "action": activity.get("action", ""),
+                        "entity_type": activity.get("entity_type", ""),
+                        "timestamp": activity.get("timestamp", ""),
+                        "details": activity.get("details", ""),
+                    }
+                )
 
         output.seek(0)
         return send_file(
@@ -448,7 +744,8 @@ def export_report():
             as_attachment=True,
             download_name=f'report_{report_type}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
         )
-    except:
+    except Exception as e:
+        app.logger.exception(e)
         flash("Không thể xuất báo cáo", "danger")
         return redirect(url_for("reports"))
 
