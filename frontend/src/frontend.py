@@ -750,6 +750,12 @@ def export_report():
         return redirect(url_for("reports"))
 
 
+# Health check endpoint
+@app.route("/health")
+def health_check():
+    return {"status": "healthy", "service": "asset-management-frontend"}, 200
+
+
 # Error handlers
 @app.errorhandler(404)
 def not_found(e):

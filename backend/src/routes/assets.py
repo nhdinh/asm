@@ -6,6 +6,14 @@ from datetime import datetime
 asset_bp = Blueprint("assets", __name__)
 
 
+def user_has_access_to_department(user, department_id):
+    """Check if user has access to a department (admin or manager of that department)"""
+    if user.role == UserRole.ADMIN:
+        return True
+    user_dept_ids = [dept.id for dept in user.departments]
+    return department_id in user_dept_ids
+
+
 @asset_bp.route("", methods=["GET"])
 @jwt_required()
 def get_assets():
@@ -14,9 +22,11 @@ def get_assets():
 
     query = Asset.query
 
-    # Filter by department for managers
+    # Filter by department for managers - only show assets from their departments
     if current_user.role == UserRole.MANAGER:
-        query = query.filter_by(department_id=current_user.department_id)
+        user_dept_ids = [dept.id for dept in current_user.departments]
+        if user_dept_ids:
+            query = query.filter(Asset.department_id.in_(user_dept_ids))
 
     # Apply filters
     department_id = request.args.get("department_id")
@@ -42,10 +52,11 @@ def create_asset():
 
     data = request.json
 
-    # Check permissions
+    # Check permissions - Manager can only create assets for their departments
     if current_user.role == UserRole.MANAGER:
-        if data.get("department_id") != current_user.department_id:
-            return jsonify({"message": "Unauthorized"}), 403
+        user_dept_ids = [dept.id for dept in current_user.departments]
+        if data.get("department_id") not in user_dept_ids:
+            return jsonify({"message": "Unauthorized - can only create assets for your departments"}), 403
 
     if Asset.query.filter_by(code=data["code"]).first():
         return jsonify({"message": "Asset code already exists"}), 400
@@ -94,9 +105,8 @@ def update_asset(id):
     asset = Asset.query.get_or_404(id)
 
     # Check permissions
-    if current_user.role == UserRole.MANAGER:
-        if asset.department_id != current_user.department_id:
-            return jsonify({"message": "Unauthorized"}), 403
+    if not user_has_access_to_department(current_user, asset.department_id):
+        return jsonify({"message": "Unauthorized - no access to this asset's department"}), 403
 
     data = request.json
 
@@ -142,13 +152,12 @@ def transfer_asset(id):
     asset = Asset.query.get_or_404(id)
     data = request.json
 
-    # Check permissions
+    # Check permissions - manager must have access to source or destination department
     if current_user.role == UserRole.MANAGER:
-        if (
-            asset.department_id != current_user.department_id
-            and data["to_department_id"] != current_user.department_id
-        ):
-            return jsonify({"message": "Unauthorized"}), 403
+        has_source_access = user_has_access_to_department(current_user, asset.department_id)
+        has_dest_access = user_has_access_to_department(current_user, data["to_department_id"])
+        if not (has_source_access or has_dest_access):
+            return jsonify({"message": "Unauthorized - no access to source or destination department"}), 403
 
     # Create transfer record
     transfer = AssetTransfer(
@@ -189,9 +198,8 @@ def get_asset(id):
     asset = Asset.query.get_or_404(id)
 
     # Check permissions
-    if current_user.role == UserRole.MANAGER:
-        if asset.department_id != current_user.department_id:
-            return jsonify({"message": "Unauthorized"}), 403
+    if not user_has_access_to_department(current_user, asset.department_id):
+        return jsonify({"message": "Unauthorized - no access to this asset's department"}), 403
 
     return jsonify(asset.to_dict())
 
@@ -205,9 +213,8 @@ def delete_asset(id):
     asset = Asset.query.get_or_404(id)
 
     # Check permissions
-    if current_user.role == UserRole.MANAGER:
-        if asset.department_id != current_user.department_id:
-            return jsonify({"message": "Unauthorized"}), 403
+    if not user_has_access_to_department(current_user, asset.department_id):
+        return jsonify({"message": "Unauthorized - no access to this asset's department"}), 403
 
     asset_code = asset.code
     db.session.delete(asset)

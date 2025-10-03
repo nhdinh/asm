@@ -80,8 +80,8 @@ class Department(db.Model):
 
     assets = db.relationship("Asset", backref="department", lazy="dynamic")
 
-    def to_dict(self):
-        return {
+    def to_dict(self, include_details=False):
+        result = {
             "id": self.id,
             "name": self.name,
             "description": self.description,
@@ -90,6 +90,20 @@ class Department(db.Model):
             "user_count": self.users.count(),
             "total_value": self.total_value,
         }
+
+        if include_details:
+            # Include users list
+            result["users"] = [
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "role": user.role.value
+                }
+                for user in self.users.all()
+            ]
+
+        return result
 
 
 class Asset(db.Model):

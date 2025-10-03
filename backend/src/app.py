@@ -92,6 +92,11 @@ def create_app():
     app.register_blueprint(report_bp, url_prefix="/api/reports")
     app.register_blueprint(users_bp, url_prefix="/api/users")
 
+    # Health check endpoint
+    @app.route("/api/health")
+    def health_check():
+        return {"status": "healthy", "service": "asset-management-api"}, 200
+
     with app.app_context():
         db.create_all()
 

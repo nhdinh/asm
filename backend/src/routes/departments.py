@@ -16,7 +16,7 @@ def get_departments():
 @jwt_required()
 def get_department(id):
     dept = Department.query.get_or_404(id)
-    return jsonify(dept.to_dict())
+    return jsonify(dept.to_dict(include_details=True))
 
 
 @dept_bp.route("", methods=["POST"])

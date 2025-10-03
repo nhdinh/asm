@@ -7,6 +7,14 @@ from datetime import datetime
 report_bp = Blueprint("reports", __name__)
 
 
+def user_has_access_to_department(user, department_id):
+    """Check if user has access to a department (admin or manager of that department)"""
+    if user.role == UserRole.ADMIN:
+        return True
+    user_dept_ids = [dept.id for dept in user.departments]
+    return department_id in user_dept_ids
+
+
 @report_bp.route("/assets", methods=["GET"])
 @jwt_required()
 def asset_report():
@@ -22,9 +30,11 @@ def asset_report():
 
     query = Asset.query
 
-    # Apply permission filter
+    # Apply permission filter - managers only see assets from their departments
     if current_user.role == UserRole.MANAGER:
-        query = query.filter_by(department_id=current_user.department_id)
+        user_dept_ids = [dept.id for dept in current_user.departments]
+        if user_dept_ids:
+            query = query.filter(Asset.department_id.in_(user_dept_ids))
 
     # Apply filters
     if department_id:
@@ -74,9 +84,8 @@ def single_asset_report(id):
     asset = Asset.query.get_or_404(id)
 
     # Check permissions
-    if current_user.role == UserRole.MANAGER:
-        if asset.department_id != current_user.department_id:
-            return jsonify({"message": "Unauthorized"}), 403
+    if not user_has_access_to_department(current_user, asset.department_id):
+        return jsonify({"message": "Unauthorized - no access to this asset's department"}), 403
 
     # Get transfer history
     transfers = asset.transfers.order_by(AssetTransfer.transfer_date.desc()).all()
@@ -166,20 +175,23 @@ def dashboard_stats():
             UserActivity.query.order_by(UserActivity.timestamp.desc()).limit(10).all()
         )
     else:
-        total_assets = Asset.query.filter_by(
-            department_id=current_user.department_id
-        ).count()
-        total_departments = 1
-        total_users = User.query.filter_by(
-            department_id=current_user.department_id
-        ).count()
+        # Manager stats - aggregate from all their departments
+        user_dept_ids = [dept.id for dept in current_user.departments]
 
-        assets_by_status = (
-            db.session.query(Asset.status, func.count(Asset.id))
-            .filter_by(department_id=current_user.department_id)
-            .group_by(Asset.status)
-            .all()
-        )
+        if user_dept_ids:
+            total_assets = Asset.query.filter(Asset.department_id.in_(user_dept_ids)).count()
+            assets_by_status = (
+                db.session.query(Asset.status, func.count(Asset.id))
+                .filter(Asset.department_id.in_(user_dept_ids))
+                .group_by(Asset.status)
+                .all()
+            )
+        else:
+            total_assets = 0
+            assets_by_status = []
+
+        total_departments = len(current_user.departments)
+        total_users = sum(dept.users.count() for dept in current_user.departments)
 
         recent_activities = (
             UserActivity.query.filter_by(user_id=current_user_id)
