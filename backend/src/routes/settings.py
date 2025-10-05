@@ -18,6 +18,36 @@ DEFAULT_SETTINGS = {
         "description": "Thời gian khóa (phút) sau khi đăng nhập thất bại quá số lần",
         "data_type": "int"
     },
+    "password_min_length": {
+        "value": "8",
+        "description": "Độ dài tối thiểu của mật khẩu",
+        "data_type": "int"
+    },
+    "password_require_uppercase": {
+        "value": "true",
+        "description": "Yêu cầu chữ hoa trong mật khẩu",
+        "data_type": "bool"
+    },
+    "password_require_lowercase": {
+        "value": "true",
+        "description": "Yêu cầu chữ thường trong mật khẩu",
+        "data_type": "bool"
+    },
+    "password_require_digit": {
+        "value": "true",
+        "description": "Yêu cầu chữ số trong mật khẩu",
+        "data_type": "bool"
+    },
+    "password_require_special": {
+        "value": "true",
+        "description": "Yêu cầu ký tự đặc biệt trong mật khẩu",
+        "data_type": "bool"
+    },
+    "default_items_per_page": {
+        "value": "20",
+        "description": "Số mục hiển thị mỗi trang (mặc định toàn hệ thống)",
+        "data_type": "int"
+    },
     "audit_archive_days": {
         "value": "30",
         "description": "Số ngày sau đó hệ thống sẽ lưu audit log xuống file",

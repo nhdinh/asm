@@ -49,6 +49,98 @@
             </div>
         </div>
 
+        <!-- Password Policy Settings -->
+        <div class="border rounded-lg p-6 bg-gray-50">
+            <h4 class="text-lg font-semibold mb-4 flex items-center">
+                🔑 Chính Sách Mật Khẩu
+            </h4>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">
+                        Độ dài tối thiểu
+                    </label>
+                    <input
+                        type="number"
+                        name="password_min_length"
+                        min="6"
+                        max="32"
+                        value="{{ settings.get('password_min_length', {}).get('value', '8') }}"
+                        required
+                        class="border rounded px-4 py-2 w-full max-w-xs">
+                    <p class="text-xs text-gray-500 mt-1">
+                        Mặc định: 8 ký tự. Số ký tự tối thiểu cho mật khẩu.
+                    </p>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium mb-2">Yêu cầu loại ký tự:</label>
+
+                    <label class="flex items-center space-x-2">
+                        <input
+                            type="checkbox"
+                            name="password_require_uppercase"
+                            value="true"
+                            {% if settings.get('password_require_uppercase', {}).get('value', 'true') == 'true' %}checked{% endif %}
+                            class="w-4 h-4">
+                        <span class="text-sm">Chữ hoa (A-Z)</span>
+                    </label>
+
+                    <label class="flex items-center space-x-2">
+                        <input
+                            type="checkbox"
+                            name="password_require_lowercase"
+                            value="true"
+                            {% if settings.get('password_require_lowercase', {}).get('value', 'true') == 'true' %}checked{% endif %}
+                            class="w-4 h-4">
+                        <span class="text-sm">Chữ thường (a-z)</span>
+                    </label>
+
+                    <label class="flex items-center space-x-2">
+                        <input
+                            type="checkbox"
+                            name="password_require_digit"
+                            value="true"
+                            {% if settings.get('password_require_digit', {}).get('value', 'true') == 'true' %}checked{% endif %}
+                            class="w-4 h-4">
+                        <span class="text-sm">Chữ số (0-9)</span>
+                    </label>
+
+                    <label class="flex items-center space-x-2">
+                        <input
+                            type="checkbox"
+                            name="password_require_special"
+                            value="true"
+                            {% if settings.get('password_require_special', {}).get('value', 'true') == 'true' %}checked{% endif %}
+                            class="w-4 h-4">
+                        <span class="text-sm">Ký tự đặc biệt (!@#$%^&*...)</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pagination Settings -->
+        <div class="border rounded-lg p-6 bg-gray-50">
+            <h4 class="text-lg font-semibold mb-4 flex items-center">
+                📄 Phân Trang
+            </h4>
+            <div>
+                <label class="block text-sm font-medium mb-2">
+                    Số mục hiển thị mỗi trang (mặc định toàn hệ thống)
+                </label>
+                <input
+                    type="number"
+                    name="default_items_per_page"
+                    min="5"
+                    max="100"
+                    value="{{ settings.get('default_items_per_page', {}).get('value', '20') }}"
+                    required
+                    class="border rounded px-4 py-2 w-full max-w-xs">
+                <p class="text-xs text-gray-500 mt-1">
+                    Mặc định: 20 mục/trang. Người dùng có thể tùy chỉnh cài đặt riêng trong trang cá nhân.
+                </p>
+            </div>
+        </div>
+
         <!-- Audit Log Settings -->
         <div class="border rounded-lg p-6 bg-gray-50">
             <h4 class="text-lg font-semibold mb-4 flex items-center">

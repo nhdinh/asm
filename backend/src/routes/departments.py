@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db, Department, User, UserRole, UserActivity, ActivityStatus
 from audit_logger import audit_logger
+from pagination import paginate_query, create_pagination_response, get_sort_params
 
 dept_bp = Blueprint("departments", __name__)
 
@@ -9,8 +10,49 @@ dept_bp = Blueprint("departments", __name__)
 @dept_bp.route("", methods=["GET"])
 @jwt_required()
 def get_departments():
-    departments = Department.query.all()
-    return jsonify([dept.to_dict() for dept in departments])
+    current_user_id = get_jwt_identity()
+    current_user = User.query.get(current_user_id)
+
+    # Get sort parameters
+    sort_by, sort_order = get_sort_params()
+
+    # Build base query
+    query = Department.query
+
+    # Apply search filter
+    search = request.args.get('search')
+    if search:
+        search_filter = f"%{search}%"
+        query = query.filter(
+            db.or_(
+                Department.name.ilike(search_filter),
+                Department.description.ilike(search_filter),
+                Department.code.ilike(search_filter)
+            )
+        )
+
+    # Apply sorting
+    valid_sort_fields = {
+        'name': Department.name,
+        'user_count': Department.user_count,
+        'asset_count': Department.asset_count,
+        'total_value': Department.total_value,
+        'created_at': Department.created_at
+    }
+
+    if sort_by in valid_sort_fields:
+        sort_column = valid_sort_fields[sort_by]
+        if sort_order == 'desc':
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+    else:
+        # Default sorting
+        query = query.order_by(Department.name)
+
+    pagination_result = paginate_query(query, user=current_user)
+
+    return jsonify(create_pagination_response(pagination_result, lambda d: d.to_dict()))
 
 
 @dept_bp.route("/<int:id>", methods=["GET"])
@@ -44,6 +86,13 @@ def create_department():
 
     db.session.add(dept)
     db.session.flush()  # Get dept.id before commit
+
+    # Add managers (many-to-many relationship)
+    if "manager_ids" in data:
+        for manager_id in data["manager_ids"]:
+            manager = User.query.get(manager_id)
+            if manager and manager not in dept.managers:
+                dept.managers.append(manager)
 
     # Log activity
     activity = UserActivity(
@@ -91,6 +140,17 @@ def update_department(id):
 
         dept.name = data.get("name", dept.name)
         dept.description = data.get("description", dept.description)
+
+        # Update managers (many-to-many relationship)
+        if "manager_ids" in data:
+            # Clear existing managers
+            dept.managers = []
+
+            # Add new managers
+            for manager_id in data["manager_ids"]:
+                manager = User.query.get(manager_id)
+                if manager and manager not in dept.managers:
+                    dept.managers.append(manager)
 
         # Update users (many-to-many relationship)
         if "user_ids" in data:

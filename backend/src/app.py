@@ -92,6 +92,7 @@ def create_app():
     from routes.my_assets import my_assets_bp
     from routes.audit_logs import audit_logs_bp
     from routes.settings import settings_bp
+    from routes.categories import category_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(dept_bp, url_prefix="/api/departments")
@@ -101,6 +102,7 @@ def create_app():
     app.register_blueprint(my_assets_bp, url_prefix="/api/my-assets")
     app.register_blueprint(audit_logs_bp, url_prefix="/api/audit-logs")
     app.register_blueprint(settings_bp, url_prefix="/api/settings")
+    app.register_blueprint(category_bp, url_prefix="/api/categories")
 
     # Health check endpoint
     @app.route("/api/health")

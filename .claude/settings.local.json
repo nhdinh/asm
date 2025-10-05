@@ -7,7 +7,12 @@
       "Bash(docker-compose restart:*)",
       "Bash(docker-compose:*)",
       "Bash(docker volume:*)",
-      "Bash(docker exec:*)"
+      "Bash(docker exec:*)",
+      "Bash(docker stop:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1OTU1MDgzNiwianRpIjoiYzU3Njc1NTEtMWJhYS00YjMwLWI1MzEtZTM5NTczYzkwOTViIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6MSwibmJmIjoxNzU5NTUwODM2LCJleHAiOjE3NTk2MzcyMzZ9.zXwccLSCRvi6eKvvmIQtapXoZaf0-vhRy_dr8vD5l7o\")",
+      "Bash(python3 -c \"import sys, json; print(json.load(sys.stdin)[''''access_token''''])\")",
+      "Bash(python3:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1OTYyOTMwNSwianRpIjoiN2Y4MmMzNWMtZDY0Zi00ZTJjLWEyYTMtNzUyOWM3MDljZmUzIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6MSwibmJmIjoxNzU5NjI5MzA1LCJleHAiOjE3NTk3MTU3MDV9.zuSBbpen1Jf5ifGHXcDy6UXR_UcgUA5S4lfgPxS_-qk\")"
     ],
     "deny": [],
     "ask": []

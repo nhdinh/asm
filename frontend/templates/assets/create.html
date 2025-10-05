@@ -18,8 +18,15 @@
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">Loại</label>
-                <input type="text" name="category" class="border rounded px-3 py-2 w-full"
-                       placeholder="VD: Máy tính, Thiết bị văn phòng">
+                <select id="category-select" class="border rounded px-3 py-2 w-full" onchange="toggleCategoryInput()">
+                    <option value="">Chọn loại tài sản</option>
+                    {% for cat in categories %}
+                        <option value="{{ cat.name }}">{{ cat.name }} ({{ cat.asset_count }} tài sản)</option>
+                    {% endfor %}
+                    <option value="__other__">➕ Nhập loại mới...</option>
+                </select>
+                <input type="text" id="category-input" name="category" class="border rounded px-3 py-2 w-full mt-2"
+                       placeholder="Nhập tên loại tài sản mới..." style="display: none;">
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">Giá Trị (VNĐ)</label>
@@ -83,4 +90,29 @@
         </div>
     </form>
 </div>
+
+<script>
+function toggleCategoryInput() {
+    const select = document.getElementById('category-select');
+    const input = document.getElementById('category-input');
+
+    if (select.value === '__other__') {
+        input.style.display = 'block';
+        input.required = false;
+        input.value = '';
+        input.focus();
+    } else {
+        input.style.display = 'none';
+        input.required = false;
+        input.value = select.value;
+    }
+}
+
+// Set initial value
+document.addEventListener('DOMContentLoaded', function() {
+    const select = document.getElementById('category-select');
+    const input = document.getElementById('category-input');
+    input.value = select.value;
+});
+</script>
 {% endblock %}

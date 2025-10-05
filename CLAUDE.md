@@ -320,10 +320,12 @@ pytest --tb=short               # Short traceback
 - Health check endpoints for monitoring
 
 # Workflow
+- Use both `docker-compose.yml` and `docker-compose.reload.yml` respectively to start docker containers
 - The application is dockerized and running on http://localhost:8080/. Need to use `curl` to access the application.
-- Default admin user and password is "admin" and "admin123". Default manager user and password is "manager" and "manager123". Use those user/password to work with the application.
+- Default admin user and password is "admin" and "admin123". Default manager user and password is "manager" and "manager123". Use those credentials to work with the application.
 - In frontend module, be sure to use ApiClient to make request to backend module, never use bare requests module to make request.
 - Both the backend docker instance and frontend docker instance will be reloaded and restarted when python code changed, so no need to issue a command to reload docker upon every code changing. But when template file is changed, the frontend will not restarted and reloaded, so that the command to restart frontend docker instance need to be issued.
-- When the backend docker instance is restarted, the log message "INFO in app: Asset Management API startup" is issued and following withs 2 lines of log contains debugger information
-- When the frontend docker instance is restarted, the log message "INFO in app: Asset Management Frontend startup" is issued.
+- When the backend docker instance is restarted, the docker log message "INFO in app: Asset Management API startup" is issued and following withs 2 lines of log contains debugger information
+- When the frontend docker instance is restarted, the docker log message "INFO in app: Asset Management Frontend startup" is issued.
 - In order to get correct log message from docker, be sure to clear log before make request, both with frontend and backend containers.
+- In anytime the template *.html file is edited, ensure that the frontend container is restart to load changes.

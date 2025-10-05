@@ -28,7 +28,7 @@
         <div class="space-y-4">
             <div>
                 <label class="block text-sm font-medium mb-1">Phòng Ban Đích *</label>
-                <select name="to_department_id" required class="border rounded px-3 py-2 w-full">
+                <select id="to_department_id" name="to_department_id" required class="border rounded px-3 py-2 w-full">
                     <option value="">Chọn phòng ban</option>
                     {% for dept in departments %}
                         {% if dept.id != asset.department_id %}
@@ -36,6 +36,14 @@
                         {% endif %}
                     {% endfor %}
                 </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Bàn Giao Cho *</label>
+                <select id="assigned_to_id" name="assigned_to_id" required class="border rounded px-3 py-2 w-full">
+                    <option value="">Chọn người nhận</option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Chọn người dùng trong phòng ban đích để bàn giao tài sản</p>
             </div>
 
             <div>
@@ -56,4 +64,42 @@
         </div>
     </form>
 </div>
+
+<script>
+// User data with department associations
+const users = {{ users|tojson }};
+
+// Map users to their departments
+const usersByDepartment = {};
+users.forEach(user => {
+    if (user.departments && user.departments.length > 0) {
+        user.departments.forEach(dept => {
+            const deptId = dept.id;
+            if (!usersByDepartment[deptId]) {
+                usersByDepartment[deptId] = [];
+            }
+            usersByDepartment[deptId].push(user);
+        });
+    }
+});
+
+// Update user dropdown when department changes
+document.getElementById('to_department_id').addEventListener('change', function() {
+    const deptId = parseInt(this.value);
+    const userSelect = document.getElementById('assigned_to_id');
+
+    // Clear existing options
+    userSelect.innerHTML = '<option value="">Chọn người nhận</option>';
+
+    // Populate with users from selected department
+    if (deptId && usersByDepartment[deptId]) {
+        usersByDepartment[deptId].forEach(user => {
+            const option = document.createElement('option');
+            option.value = user.id;
+            option.textContent = user.fullname;
+            userSelect.appendChild(option);
+        });
+    }
+});
+</script>
 {% endblock %}

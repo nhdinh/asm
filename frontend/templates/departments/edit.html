@@ -19,6 +19,24 @@
                           class="border rounded px-3 py-2 w-full">{{ department.description or '' }}</textarea>
             </div>
             <div>
+                <label class="block text-sm font-medium mb-1">Quản Lý Phòng</label>
+                <div class="border rounded px-3 py-2 max-h-40 overflow-y-auto bg-gray-50">
+                    {% for user in users %}
+                    {% if user.role in ['admin', 'manager'] %}
+                    <div class="flex items-center mb-2">
+                        <input type="checkbox" name="manager_ids" value="{{ user.id }}"
+                               id="manager_{{ user.id }}" class="mr-2"
+                               {% if department.managers and user.id in (department.managers | map(attribute='id') | list) %}checked{% endif %}>
+                        <label for="manager_{{ user.id }}" class="cursor-pointer">
+                            {{ user.fullname or user.username }} ({{ user.role|upper }})
+                        </label>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                <p class="text-xs text-gray-500 mt-1">Chọn người quản lý phòng ban (chỉ hiển thị Admin và Manager)</p>
+            </div>
+            <div>
                 <label class="block text-sm font-medium mb-1">Thành Viên</label>
                 <div class="border rounded px-3 py-2 max-h-60 overflow-y-auto">
                     {% for user in users %}

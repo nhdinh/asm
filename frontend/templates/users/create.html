@@ -21,9 +21,10 @@
                 <label class="block text-sm font-medium mb-1">Email *</label>
                 <input type="email" name="email" required class="border rounded px-3 py-2 w-full">
             </div>
-            <div>
+            <div class="col-span-2">
                 <label class="block text-sm font-medium mb-1">Mật Khẩu *</label>
-                <input type="password" name="password" required class="border rounded px-3 py-2 w-full">
+                <input type="password" name="password" id="password" required class="border rounded px-3 py-2 w-full">
+                {% include 'components/password_validator.html' %}
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">Vai Trò *</label>
@@ -32,6 +33,13 @@
                     <option value="manager">Manager</option>
                     <option value="viewer">Viewer</option>
                 </select>
+            </div>
+            <div class="col-span-2">
+                <label class="flex items-center">
+                    <input type="checkbox" name="must_change_password" value="true" class="mr-2">
+                    <span class="text-sm font-medium">Bắt buộc đổi mật khẩu khi đăng nhập lần đầu</span>
+                </label>
+                <p class="text-xs text-gray-500 mt-1">Người dùng sẽ phải đổi mật khẩu ngay sau khi đăng nhập lần đầu</p>
             </div>
             <div class="col-span-2">
                 <label class="block text-sm font-medium mb-1">Phòng Ban</label>
@@ -59,4 +67,62 @@
         </div>
     </form>
 </div>
+
+<script>
+// Initialize password policy validator
+window.addEventListener('DOMContentLoaded', async function() {
+    await PasswordPolicyValidator.init();
+
+    const passwordInput = document.getElementById('password');
+    const mustChangePasswordCheckbox = document.querySelector('input[name="must_change_password"]');
+    const policyValidator = document.getElementById('password-policy-validator');
+
+    // Function to update policy validation state
+    function updatePolicyValidationState() {
+        const isMustChangePassword = mustChangePasswordCheckbox.checked;
+
+        if (isMustChangePassword) {
+            // Hide policy validator when must change password is checked
+            if (policyValidator) {
+                policyValidator.style.display = 'none';
+            }
+        } else {
+            // Show and validate when must change password is not checked
+            if (policyValidator) {
+                policyValidator.style.display = 'block';
+            }
+            PasswordPolicyValidator.validate(passwordInput.value);
+        }
+    }
+
+    // Real-time validation
+    passwordInput.addEventListener('input', function() {
+        if (!mustChangePasswordCheckbox.checked) {
+            PasswordPolicyValidator.validate(this.value);
+        }
+    });
+
+    // Update validation state when checkbox changes
+    mustChangePasswordCheckbox.addEventListener('change', updatePolicyValidationState);
+
+    // Initial state
+    updatePolicyValidationState();
+});
+
+// Validate password policy on submit
+document.querySelector('form').addEventListener('submit', function(e) {
+    const password = document.getElementById('password').value;
+    const mustChangePassword = document.querySelector('input[name="must_change_password"]').checked;
+
+    // Only check password policy if must_change_password is NOT checked
+    if (!mustChangePassword) {
+        const validation = PasswordPolicyValidator.validate(password);
+        if (!validation.valid) {
+            e.preventDefault();
+            alert('Mật khẩu không đáp ứng yêu cầu:\n\n' + validation.errors.join('\n'));
+            return false;
+        }
+    }
+});
+</script>
 {% endblock %}

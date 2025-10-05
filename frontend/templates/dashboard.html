@@ -18,7 +18,7 @@
     </div>
     <div class="bg-white p-6 rounded-lg shadow">
         <div class="text-gray-500 text-sm">Cần Bảo Trì</div>
-        <div class="text-3xl font-bold text-red-600 mt-2">23</div>
+        <div class="text-3xl font-bold text-red-600 mt-2">{{ damaged_count|default(0) }}</div>
     </div>
 </div>
 
@@ -28,8 +28,62 @@
         <canvas id="assetTypeChart"></canvas>
     </div>
     <div class="bg-white p-6 rounded-lg shadow">
-        <h3 class="text-lg font-bold mb-4">Giá Trị Theo Thời Gian</h3>
-        <canvas id="valueChart"></canvas>
+        <h3 class="text-lg font-bold mb-4">Phân Bổ Theo Trạng Thái</h3>
+        <canvas id="statusChart"></canvas>
+    </div>
+</div>
+
+<div class="mt-6 bg-white p-6 rounded-lg shadow">
+    <h3 class="text-lg font-bold mb-4">Tài Sản Mới Nhất</h3>
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mã</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tên</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Loại</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Được cấp cho</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Giá trị</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for asset in recent_assets[:10] %}
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">{{ asset.code }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">{{ asset.name }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">{{ asset.category or 'N/A' }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if asset.assigned_to_name %}
+                            <a href="{{ url_for('user_detail', id=asset.assigned_to_id) }}" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 transition">
+                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+                                </svg>
+                                {{ asset.assigned_to_name }}
+                            </a>
+                        {% else %}
+                            <span class="text-gray-400 italic text-sm">Chưa cấp</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">{{ "%.0f"|format(asset.purchase_value|default(0)) }} VNĐ</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                            {% if asset.status == 'ACTIVE' %}bg-green-100 text-green-800
+                            {% elif asset.status == 'DAMAGED' %}bg-red-100 text-red-800
+                            {% else %}bg-gray-100 text-gray-800{% endif %}">
+                            {% if asset.status == 'ACTIVE' %}Hoạt động
+                            {% elif asset.status == 'DAMAGED' %}Hỏng
+                            {% else %}{{ asset.status }}{% endif %}
+                        </span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="px-6 py-4 text-center text-gray-500">Không có tài sản nào</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 {% endblock %}
@@ -37,31 +91,76 @@
 {% block extra_js %}
 <script>
 window.onload = function() {
+    // Asset Type Chart - using real data from backend
+    const assetsByCategoryData = {{ assets_by_category|tojson }};
+    const categoryLabels = Object.keys(assetsByCategoryData);
+    const categoryCounts = categoryLabels.map(cat => assetsByCategoryData[cat].count);
+
     const ctx1 = document.getElementById('assetTypeChart').getContext('2d');
     new Chart(ctx1, {
         type: 'doughnut',
         data: {
-            labels: ['Máy tính', 'Thiết bị VP', 'Xe cộ', 'Nội thất', 'Khác'],
+            labels: categoryLabels.length > 0 ? categoryLabels : ['Không có dữ liệu'],
             datasets: [{
-                data: [456, 321, 45, 189, 223],
-                backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+                data: categoryCounts.length > 0 ? categoryCounts : [1],
+                backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
             }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
         }
     });
 
-    const ctx2 = document.getElementById('valueChart').getContext('2d');
+    // Status Chart - using real data from backend
+    const assetsByStatusData = {{ assets_by_status|tojson }};
+    const statusLabels = [];
+    const statusCounts = [];
+    const statusColors = [];
+
+    const statusMap = {
+        'active': { label: 'Hoạt động', color: '#10b981' },
+        'damaged': { label: 'Hỏng', color: '#ef4444' },
+        'disposed': { label: 'Đã thanh lý', color: '#6b7280' }
+    };
+
+    for (const [status, count] of Object.entries(assetsByStatusData)) {
+        const statusInfo = statusMap[status.toLowerCase()] || { label: status, color: '#3b82f6' };
+        statusLabels.push(statusInfo.label);
+        statusCounts.push(count);
+        statusColors.push(statusInfo.color);
+    }
+
+    const ctx2 = document.getElementById('statusChart').getContext('2d');
     new Chart(ctx2, {
-        type: 'line',
+        type: 'bar',
         data: {
-            labels: ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9'],
+            labels: statusLabels.length > 0 ? statusLabels : ['Không có dữ liệu'],
             datasets: [{
-                label: 'Giá trị (Tỷ VNĐ)',
-                data: [42, 43, 44, 43, 44, 45, 45, 46, 45.2],
-                borderColor: '#3b82f6',
-                tension: 0.4,
-                fill: true,
-                backgroundColor: 'rgba(59, 130, 246, 0.1)'
+                label: 'Số lượng',
+                data: statusCounts.length > 0 ? statusCounts : [0],
+                backgroundColor: statusColors.length > 0 ? statusColors : ['#3b82f6']
             }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
         }
     });
 };

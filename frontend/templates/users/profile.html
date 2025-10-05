@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block page_title %}Thông tin cá nhân{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <h2 class="text-2xl font-bold mb-6">Thông tin cá nhân</h2>
+
+    {% if user.must_change_password %}
+    <div class="mb-6 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
+        <p class="font-bold">⚠️ Bạn phải đổi mật khẩu trước khi tiếp tục sử dụng hệ thống</p>
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Profile Information -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h3 class="text-lg font-bold mb-4">Thông tin tài khoản</h3>
+            <form method="POST" action="{{ url_for('profile') }}">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Tên đăng nhập</label>
+                    <input type="text" value="{{ user.username }}" disabled class="border rounded px-3 py-2 w-full bg-gray-100">
+                    <p class="text-xs text-gray-500 mt-1">Không thể thay đổi tên đăng nhập</p>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Họ tên</label>
+                    <input type="text" name="fullname" value="{{ user.fullname or '' }}" required class="border rounded px-3 py-2 w-full">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Email</label>
+                    <input type="email" name="email" value="{{ user.email }}" required class="border rounded px-3 py-2 w-full">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Vai trò</label>
+                    <input type="text" value="{% if user.role == 'admin' %}Quản trị viên{% elif user.role == 'manager' %}Quản lý{% else %}Người dùng{% endif %}" disabled class="border rounded px-3 py-2 w-full bg-gray-100">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Số mục hiển thị mỗi trang</label>
+                    <input type="number" name="items_per_page" value="{{ user.items_per_page or '' }}" min="5" max="100" placeholder="{{ default_items_per_page }}" class="border rounded px-3 py-2 w-full">
+                    {% if user.items_per_page %}
+                    <p class="text-xs text-gray-500 mt-1">Đang sử dụng cài đặt cá nhân: <strong>{{ user.items_per_page }}</strong> mục/trang. Để trống để dùng mặc định hệ thống ({{ default_items_per_page }}).</p>
+                    {% else %}
+                    <p class="text-xs text-blue-600 mt-1">⚙️ Đang sử dụng cài đặt mặc định hệ thống: <strong>{{ default_items_per_page }}</strong> mục/trang. Nhập giá trị để tùy chỉnh.</p>
+                    {% endif %}
+                </div>
+                <div class="mt-6">
+                    <button type="submit" class="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                        Cập nhật thông tin
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Password Change -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h3 class="text-lg font-bold mb-4">Đổi mật khẩu</h3>
+            <form method="POST" action="{{ url_for('change_password') }}">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Mật khẩu hiện tại <span class="text-red-500">*</span></label>
+                    <input type="password" name="old_password" required class="border rounded px-3 py-2 w-full">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Mật khẩu mới <span class="text-red-500">*</span></label>
+                    <input type="password" name="new_password" id="new_password" required class="border rounded px-3 py-2 w-full">
+                    {% include 'components/password_validator.html' %}
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Xác nhận mật khẩu mới <span class="text-red-500">*</span></label>
+                    <input type="password" name="confirm_password" id="confirm_password" required minlength="6" class="border rounded px-3 py-2 w-full">
+                </div>
+                <div class="mt-6">
+                    <button type="submit" class="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                        Đổi mật khẩu
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="mt-6">
+        <a href="{% if user.must_change_password %}{{ url_for('logout') }}{% else %}{{ url_for('dashboard') }}{% endif %}"
+           class="inline-block bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+            {% if user.must_change_password %}Đăng xuất{% else %}Quay lại{% endif %}
+        </a>
+    </div>
+</div>
+
+<script>
+// Initialize password policy validator
+window.addEventListener('DOMContentLoaded', async function() {
+    await PasswordPolicyValidator.init();
+
+    // Real-time validation
+    const newPasswordInput = document.getElementById('new_password');
+    newPasswordInput.addEventListener('input', function() {
+        PasswordPolicyValidator.validate(this.value);
+    });
+});
+
+// Validate password confirmation and policy
+document.querySelector('form[action="{{ url_for("change_password") }}"]').addEventListener('submit', function(e) {
+    const newPassword = document.getElementById('new_password').value;
+    const confirmPassword = document.getElementById('confirm_password').value;
+
+    // Check password confirmation
+    if (newPassword !== confirmPassword) {
+        e.preventDefault();
+        alert('Mật khẩu mới và xác nhận mật khẩu không khớp!');
+        return false;
+    }
+
+    // Check password policy
+    const validation = PasswordPolicyValidator.validate(newPassword);
+    if (!validation.valid) {
+        e.preventDefault();
+        alert('Mật khẩu không đáp ứng yêu cầu:\n\n' + validation.errors.join('\n'));
+        return false;
+    }
+});
+</script>
+{% endblock %}

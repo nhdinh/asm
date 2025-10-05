@@ -165,9 +165,24 @@ def dashboard_stats():
         total_departments = Department.query.count()
         total_users = User.query.count()
 
+        # Calculate total value
+        total_value = db.session.query(func.sum(Asset.purchase_value)).scalar() or 0
+
+        # Get assets by status with counts
         assets_by_status = (
             db.session.query(Asset.status, func.count(Asset.id))
             .group_by(Asset.status)
+            .all()
+        )
+
+        # Get assets by category with counts and values
+        assets_by_category = (
+            db.session.query(
+                Asset.category,
+                func.count(Asset.id),
+                func.sum(Asset.purchase_value)
+            )
+            .group_by(Asset.category)
             .all()
         )
 
@@ -180,15 +195,35 @@ def dashboard_stats():
 
         if user_dept_ids:
             total_assets = Asset.query.filter(Asset.department_id.in_(user_dept_ids)).count()
+
+            # Calculate total value for manager's departments
+            total_value = db.session.query(func.sum(Asset.purchase_value)).filter(
+                Asset.department_id.in_(user_dept_ids)
+            ).scalar() or 0
+
             assets_by_status = (
                 db.session.query(Asset.status, func.count(Asset.id))
                 .filter(Asset.department_id.in_(user_dept_ids))
                 .group_by(Asset.status)
                 .all()
             )
+
+            # Get assets by category for manager's departments
+            assets_by_category = (
+                db.session.query(
+                    Asset.category,
+                    func.count(Asset.id),
+                    func.sum(Asset.purchase_value)
+                )
+                .filter(Asset.department_id.in_(user_dept_ids))
+                .group_by(Asset.category)
+                .all()
+            )
         else:
             total_assets = 0
+            total_value = 0
             assets_by_status = []
+            assets_by_category = []
 
         total_departments = len(current_user.departments)
         total_users = sum(dept.users.count() for dept in current_user.departments)
@@ -203,10 +238,15 @@ def dashboard_stats():
     return jsonify(
         {
             "total_assets": total_assets,
+            "total_value": total_value,
             "total_departments": total_departments,
             "total_users": total_users,
             "assets_by_status": {
                 status.value: count for status, count in assets_by_status
+            },
+            "assets_by_category": {
+                category or "Khác": {"count": count, "value": value or 0}
+                for category, count, value in assets_by_category
             },
             "recent_activities": [a.to_dict() for a in recent_activities],
         }

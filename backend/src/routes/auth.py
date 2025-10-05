@@ -5,6 +5,7 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from sqlalchemy import desc
 from models import ActivityStatus, db, User, UserRole, UserActivity, Department, SystemSetting
 from audit_logger import audit_logger
+from password_policy import PasswordPolicy
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -55,31 +56,42 @@ def login():
             401,
         )
 
-    # Create log activity record
+    # Find user
     user = User.query.filter_by(username=username).first()
-    activity = UserActivity(
-        user_id=user.id,
-        username=user.username,
-        action="login",
-        details="User logged in",
-        status=ActivityStatus.SUCCESS,
-        failed_count=0,
-    )
 
+    # Check if user exists and password is correct
     access_token = None
     if user and user.check_password(password):
         access_token = create_access_token(identity=user.id)
-    else:
-        # Log activity
-        activity.status = ActivityStatus.FAILED
-        activity.failed_count = (
-            last_login.failed_count + 1
-            if last_login is not None and last_login.status == ActivityStatus.FAILED
-            else 1
-        )
 
-    db.session.add(activity)
-    db.session.commit()
+        # Create success activity record
+        activity = UserActivity(
+            user_id=user.id,
+            username=user.username,
+            action="login",
+            details="User logged in",
+            status=ActivityStatus.SUCCESS,
+            failed_count=0,
+        )
+        db.session.add(activity)
+        db.session.commit()
+    else:
+        # Create failed activity record (only if user exists)
+        if user:
+            activity = UserActivity(
+                user_id=user.id,
+                username=user.username,
+                action="login",
+                details="Failed login attempt",
+                status=ActivityStatus.FAILED,
+                failed_count=(
+                    last_login.failed_count + 1
+                    if last_login is not None and last_login.status == ActivityStatus.FAILED
+                    else 1
+                ),
+            )
+            db.session.add(activity)
+            db.session.commit()
 
     # Audit log for successful login
     if access_token:
@@ -119,6 +131,28 @@ def register():
         return jsonify({"message": "Unauthorized"}), 403
 
     data = request.json
+    current_app.logger.info(f"Register request data: {data}")
+
+    # Validate required fields
+    if not data.get("username"):
+        return jsonify({"message": "Username is required"}), 400
+    if not data.get("email"):
+        return jsonify({"message": "Email is required"}), 400
+    if not data.get("password"):
+        return jsonify({"message": "Password is required"}), 400
+    if not data.get("role"):
+        return jsonify({"message": "Role is required"}), 400
+
+    # Validate password against policy only if must_change_password is False
+    # If must_change_password is True, user will be forced to set a policy-compliant password on first login
+    must_change_password = data.get("must_change_password", False)
+    if not must_change_password:
+        is_valid, errors = PasswordPolicy.validate_password(data["password"])
+        if not is_valid:
+            return jsonify({
+                "message": "Mật khẩu không đáp ứng yêu cầu chính sách",
+                "errors": errors
+            }), 400
 
     # Check if user exists
     if User.query.filter_by(username=data["username"]).first():
@@ -133,43 +167,59 @@ def register():
 
         return jsonify({"message": "Email already exists"}), 400
 
-    with current_app.app_context():
-        user = User(
-            username=data["username"],
-            fullname=data.get("fullname"),
-            email=data["email"],
-            role=UserRole[data["role"].upper()],
-        )
-        user.set_password(data["password"])
+    # Validate non-admins must belong to at least one department
+    role = UserRole[data["role"].upper()]
+    department_ids = data.get("department_ids", [])
 
-        # Add departments (many-to-many relationship)
-        if "department_ids" in data:
-            for dept_id in data["department_ids"]:
-                dept = Department.query.get(dept_id)
-                if dept:
-                    user.departments.append(dept)
+    if role != UserRole.ADMIN and (not department_ids or len(department_ids) == 0):
+        return jsonify({"message": "Non-admin users must be assigned to at least one department"}), 400
 
-        db.session.add(user)
-        db.session.flush()  # Get user.id before commit
+    try:
+        with current_app.app_context():
+            user = User(
+                username=data["username"],
+                fullname=data.get("fullname"),
+                email=data["email"],
+                role=role,
+                must_change_password=data.get("must_change_password", False),
+            )
+            user.set_password(data["password"])
 
-        log_auth_activity(
-            action="create_user", details=f"Created user {user.username}", commit=False
-        )
-        db.session.commit()
+            # Add departments (many-to-many relationship)
+            if "department_ids" in data:
+                for dept_id in data["department_ids"]:
+                    dept = Department.query.get(dept_id)
+                    if dept:
+                        user.departments.append(dept)
 
-        # Audit log
-        audit_logger.log(
-            user_id=curr_user_id,
-            username=curr_user.username,
-            action='create',
-            entity_type='user',
-            entity_id=user.id,
-            new_values=user.to_dict(),
-            details=f"Created user {user.username}",
-            ip_address=request.remote_addr
-        )
+            db.session.add(user)
+            db.session.flush()  # Get user.id before commit
 
-        return jsonify(user.to_dict()), 201
+            log_auth_activity(
+                action="create_user", details=f"Created user {user.username}", commit=False
+            )
+            db.session.commit()
+
+            # Audit log
+            audit_logger.log(
+                user_id=curr_user_id,
+                username=curr_user.username,
+                action='create',
+                entity_type='user',
+                entity_id=user.id,
+                new_values=user.to_dict(),
+                details=f"Created user {user.username}",
+                ip_address=request.remote_addr
+            )
+
+            return jsonify(user.to_dict()), 201
+    except KeyError as e:
+        current_app.logger.error(f"Missing required field: {str(e)}")
+        return jsonify({"message": f"Missing required field: {str(e)}"}), 400
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.exception(f"Error creating user: {str(e)}")
+        return jsonify({"message": f"Error creating user: {str(e)}"}), 500
 
 
 @auth_bp.route("/reset_password", methods=["PUT"])
@@ -193,6 +243,163 @@ def get_profile():
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
     return jsonify(user.to_dict())
+
+
+@auth_bp.route("/password-policy", methods=["GET"])
+def get_password_policy():
+    """Get password policy requirements (public endpoint)"""
+    policy = PasswordPolicy.get_policy_settings()
+    requirements = PasswordPolicy.get_policy_description()
+
+    return jsonify({
+        "policy": policy,
+        "requirements": requirements,
+        "description": "Mật khẩu phải đáp ứng các yêu cầu: " + ", ".join(requirements)
+    })
+
+
+@auth_bp.route("/profile", methods=["PUT"])
+@jwt_required()
+def update_profile():
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    data = request.json
+
+    old_values = user.to_dict()
+
+    # Users can update their own fullname, email, and items_per_page
+    if "fullname" in data:
+        user.fullname = data["fullname"]
+    if "email" in data:
+        # Check if email already exists for another user
+        existing_user = User.query.filter_by(email=data["email"]).first()
+        if existing_user and existing_user.id != user.id:
+            return jsonify({"message": "Email already exists"}), 400
+        user.email = data["email"]
+    if "items_per_page" in data:
+        # Validate items_per_page value
+        items_per_page = data["items_per_page"]
+        if items_per_page is not None:
+            try:
+                items_per_page = int(items_per_page) if items_per_page != '' else None
+                if items_per_page is not None and (items_per_page < 5 or items_per_page > 100):
+                    return jsonify({"message": "Items per page must be between 5 and 100"}), 400
+            except (ValueError, TypeError):
+                return jsonify({"message": "Invalid items per page value"}), 400
+        user.items_per_page = items_per_page
+
+    # Log activity
+    activity = UserActivity(
+        user_id=user_id,
+        username=user.username,
+        action="update_profile",
+        entity_type="user",
+        entity_id=user.id,
+        details=f"User {user.username} updated their profile",
+        status=ActivityStatus.SUCCESS,
+    )
+    db.session.add(activity)
+    db.session.commit()
+
+    # Audit log
+    audit_logger.log(
+        user_id=user_id,
+        username=user.username,
+        action='update_profile',
+        entity_type='user',
+        entity_id=user.id,
+        old_values=old_values,
+        new_values=user.to_dict(),
+        details=f"User {user.username} updated their profile",
+        ip_address=request.remote_addr
+    )
+
+    return jsonify(user.to_dict())
+
+
+@auth_bp.route("/change-password", methods=["POST"])
+@jwt_required()
+def change_password():
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    data = request.json
+
+    # Validate new password is provided
+    if not data.get("new_password"):
+        return jsonify({"message": "New password is required"}), 400
+
+    # Validate password against policy
+    is_valid, errors = PasswordPolicy.validate_password(data["new_password"])
+    if not is_valid:
+        return jsonify({
+            "message": "Mật khẩu không đáp ứng yêu cầu chính sách",
+            "errors": errors
+        }), 400
+
+    # If user must change password (first login), allow without old password
+    if not user.must_change_password:
+        # Regular password change - verify old password
+        if not user.check_password(data.get("old_password", "")):
+            # Log failed attempt
+            activity = UserActivity(
+                user_id=user_id,
+                username=user.username,
+                action="change_password",
+                entity_type="user",
+                entity_id=user.id,
+                details=f"Failed password change attempt - incorrect old password",
+                status=ActivityStatus.FAILED,
+            )
+            db.session.add(activity)
+            db.session.commit()
+
+            # Audit log
+            audit_logger.log(
+                user_id=user_id,
+                username=user.username,
+                action='change_password_failed',
+                entity_type='user',
+                entity_id=user.id,
+                details="Failed password change attempt - incorrect old password",
+                ip_address=request.remote_addr
+            )
+            return jsonify({"message": "Mật khẩu cũ không đúng"}), 400
+
+    # Set new password
+    user.set_password(data["new_password"])
+
+    # Clear must_change_password flag if it was set
+    was_first_change = user.must_change_password
+    if user.must_change_password:
+        user.must_change_password = False
+
+    # Log activity
+    activity = UserActivity(
+        user_id=user_id,
+        username=user.username,
+        action="change_password",
+        entity_type="user",
+        entity_id=user.id,
+        details=f"User {user.username} changed their password" + (" (first login)" if was_first_change else ""),
+        status=ActivityStatus.SUCCESS,
+    )
+    db.session.add(activity)
+    db.session.commit()
+
+    # Audit log
+    audit_logger.log(
+        user_id=user_id,
+        username=user.username,
+        action='change_password',
+        entity_type='user',
+        entity_id=user.id,
+        old_values={'password': '[REDACTED]'},
+        new_values={'password': '[REDACTED]'},
+        details=f"User {user.username} changed their password" + (" (first login)" if was_first_change else ""),
+        ip_address=request.remote_addr
+    )
+
+    return jsonify({"message": "Mật khẩu đã được thay đổi thành công", "user": user.to_dict()})
 
 
 @jwt_required()

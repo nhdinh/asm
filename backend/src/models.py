@@ -28,6 +28,13 @@ user_departments = db.Table('user_departments',
     db.Column('assigned_at', db.DateTime, default=datetime.utcnow)
 )
 
+# Association table for many-to-many relationship between Department and Managers
+department_managers = db.Table('department_managers',
+    db.Column('department_id', db.Integer, db.ForeignKey('departments.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
+    db.Column('assigned_at', db.DateTime, default=datetime.utcnow)
+)
+
 
 class User(db.Model):
     __tablename__ = "users"
@@ -38,6 +45,8 @@ class User(db.Model):
     email = db.Column(db.String(100), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.Enum(UserRole, name='userrole', values_callable=lambda obj: [e.value for e in obj]), nullable=False)
+    must_change_password = db.Column(db.Boolean, default=False)
+    items_per_page = db.Column(db.Integer, default=None)  # None means use system default
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     # Many-to-many relationship with Department
@@ -65,6 +74,8 @@ class User(db.Model):
             "fullname": self.fullname,
             "email": self.email,
             "role": self.role.value,
+            "must_change_password": self.must_change_password,
+            "items_per_page": self.items_per_page,
             "departments": [{"id": dept.id, "name": dept.name} for dept in self.departments],
             "created_at": self.created_at.isoformat(),
         }
@@ -76,22 +87,43 @@ class Department(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
     description = db.Column(db.Text)
+    manager_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)  # One manager per department
     asset_count = db.Column(db.Integer)
     user_count = db.Column(db.Integer)
     total_value = db.Column(db.Float)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     assets = db.relationship("Asset", backref="department", lazy="dynamic")
+    manager = db.relationship("User", foreign_keys=[manager_id])  # Keep for backward compatibility
+
+    # Many-to-many relationship with managers
+    managers = db.relationship(
+        "User",
+        secondary=department_managers,
+        backref=db.backref("managed_departments", lazy="dynamic")
+    )
 
     def to_dict(self, include_details=False):
+        # Calculate total value from actual assets
+        total_value = sum(asset.purchase_value or 0 for asset in self.assets.all())
+
+        # Get managers list (use new managers relationship, fallback to old manager_id if empty)
+        managers_list = list(self.managers) if self.managers else []
+        if not managers_list and self.manager:
+            managers_list = [self.manager]
+
         result = {
             "id": self.id,
             "name": self.name,
             "description": self.description,
+            "manager_id": self.manager_id,  # Keep for backward compatibility
+            "manager_name": self.manager.fullname if self.manager else None,  # Keep for backward compatibility
+            "managers": [{"id": m.id, "fullname": m.fullname, "username": m.username} for m in managers_list],
+            "manager_names": ", ".join([m.fullname for m in managers_list]) if managers_list else None,
             "created_at": self.created_at.isoformat(),
             "asset_count": self.assets.count(),
             "user_count": self.users.count(),
-            "total_value": self.total_value,
+            "total_value": total_value,
         }
 
         if include_details:
@@ -109,6 +141,29 @@ class Department(db.Model):
         return result
 
 
+class AssetCategory(db.Model):
+    __tablename__ = "asset_categories"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationship to assets
+    assets = db.relationship("Asset", backref="category_obj", lazy="dynamic")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "asset_count": self.assets.count(),
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class Asset(db.Model):
     __tablename__ = "assets"
 
@@ -116,7 +171,8 @@ class Asset(db.Model):
     code = db.Column(db.String(50), unique=True, nullable=False)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
-    category = db.Column(db.String(50))
+    category = db.Column(db.String(50))  # Keep for backward compatibility
+    category_id = db.Column(db.Integer, db.ForeignKey("asset_categories.id"), nullable=True)  # New foreign key
     purchase_value = db.Column(db.Float)
     purchase_date = db.Column(db.Date)
     department_id = db.Column(
@@ -142,7 +198,9 @@ class Asset(db.Model):
             "code": self.code,
             "name": self.name,
             "description": self.description,
-            "category": self.category,
+            "category": self.category,  # Backward compatibility
+            "category_id": self.category_id,
+            "category_name": self.category_obj.name if self.category_obj else self.category,
             "purchase_value": self.purchase_value,
             "purchase_date": (
                 self.purchase_date.isoformat() if self.purchase_date else None
@@ -151,7 +209,7 @@ class Asset(db.Model):
             "department_name": self.department.name if self.department else None,
             "status": self.status.value,
             "assigned_to_id": self.assigned_to_id,
-            "assigned_to_name": self.assigned_to.username if self.assigned_to else None,
+            "assigned_to_name": self.assigned_to.fullname if self.assigned_to else None,
             "condition_notes": self.condition_notes,
             "created_at": self.created_at.isoformat(),
         }

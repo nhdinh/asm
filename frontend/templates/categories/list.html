@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block page_title %}Quản Lý Loại Tài Sản{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between mb-4">
+        <h3 class="text-lg font-bold">Danh Sách Loại Tài Sản</h3>
+        <a href="{{ url_for('create_category') }}"
+           class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+            + Thêm Loại Tài Sản
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <form method="GET" id="filterForm" class="mb-4 bg-gray-50 p-4 rounded-lg">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="md:col-span-2">
+                <label class="block text-sm font-medium mb-1">Tìm kiếm</label>
+                <input type="text" name="search" value="{{ filters.search or '' }}"
+                       placeholder="Tên loại tài sản, mô tả..."
+                       class="border rounded px-3 py-2 w-full text-sm">
+            </div>
+            <div class="flex items-end gap-2">
+                <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm flex-1">
+                    Lọc
+                </button>
+                <a href="{{ url_for('categories') }}" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 text-sm">
+                    Xóa
+                </a>
+            </div>
+        </div>
+        <input type="hidden" name="sort_by" value="{{ filters.sort_by }}">
+        <input type="hidden" name="sort_order" value="{{ filters.sort_order }}">
+    </form>
+
+    <table class="w-full">
+        <thead class="bg-gray-100">
+            <tr>
+                <th class="px-4 py-2 text-left">
+                    <a href="?search={{ filters.search or '' }}&sort_by=name&sort_order={% if filters.sort_by == 'name' and filters.sort_order == 'asc' %}desc{% else %}asc{% endif %}"
+                       class="hover:text-blue-600 flex items-center">
+                        Tên Loại Tài Sản
+                        {% if filters.sort_by == 'name' %}
+                            <span class="ml-1">{% if filters.sort_order == 'asc' %}▲{% else %}▼{% endif %}</span>
+                        {% endif %}
+                    </a>
+                </th>
+                <th class="px-4 py-2 text-left">Mô Tả</th>
+                <th class="px-4 py-2 text-left">Số Tài Sản</th>
+                <th class="px-4 py-2 text-left">Thao Tác</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for category in categories %}
+            <tr class="border-b hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium">{{ category.name }}</td>
+                <td class="px-4 py-3">{{ category.description or '-' }}</td>
+                <td class="px-4 py-3">{{ category.asset_count }}</td>
+                <td class="px-4 py-3">
+                    <div class="flex gap-2">
+                        <a href="{{ url_for('edit_category', id=category.id) }}"
+                           class="text-blue-500 hover:underline">Sửa</a>
+                        {% if category.asset_count == 0 %}
+                        <form method="POST" action="{{ url_for('delete_category', id=category.id) }}"
+                              onsubmit="return confirm('Bạn có chắc chắn muốn xóa loại tài sản này?')" class="inline">
+                            <button type="submit" class="text-red-500 hover:underline">Xóa</button>
+                        </form>
+                        {% else %}
+                        <span class="text-gray-400 cursor-not-allowed" title="Không thể xóa loại tài sản đang có tài sản">Xóa</span>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" class="px-4 py-8 text-center text-gray-500">
+                    Không có loại tài sản nào
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% include 'components/pagination.html' %}
+</div>
+{% endblock %}

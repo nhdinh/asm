@@ -4,12 +4,15 @@
             {% block page_title %}Dashboard{% endblock %}
         </h2>
         <div class="flex items-center gap-4">
-            <span class="text-sm text-gray-600">
-                👤 {{ session.user.username }} 
+            <a href="{{ url_for('profile') }}" class="text-sm text-gray-600 hover:text-blue-600">
+                👤 {{ session.user.username }}
                 {% if session.user.department %}
                     - {{ session.user.department.name }}
                 {% endif %}
-            </span>
+            </a>
+            <a href="{{ url_for('profile') }}" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                Tài khoản
+            </a>
             <a href="{{ url_for('logout') }}" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
                 Đăng Xuất
             </a>

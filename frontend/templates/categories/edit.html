@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block page_title %}Sửa Loại Tài Sản{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+    <h3 class="text-lg font-bold mb-6">Sửa Loại Tài Sản</h3>
+
+    <form method="POST">
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Tên Loại Tài Sản <span class="text-red-500">*</span></label>
+                <input type="text" name="name" value="{{ category.name }}" required
+                       class="border rounded px-3 py-2 w-full"
+                       placeholder="Ví dụ: Laptop, Máy in, Bàn ghế...">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Mô Tả</label>
+                <textarea name="description" rows="4"
+                          class="border rounded px-3 py-2 w-full"
+                          placeholder="Mô tả chi tiết về loại tài sản này...">{{ category.description or '' }}</textarea>
+            </div>
+
+            <div class="bg-gray-50 p-3 rounded text-sm text-gray-600">
+                <p><strong>Số tài sản:</strong> {{ category.asset_count }}</p>
+            </div>
+        </div>
+
+        <div class="mt-6 flex gap-2">
+            <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                Cập Nhật
+            </button>
+            <a href="{{ url_for('categories') }}" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                Hủy
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

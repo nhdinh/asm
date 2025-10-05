@@ -71,7 +71,18 @@
                 </tr>
                 <tr class="border-b">
                     <td class="py-2 font-medium text-gray-600">Bàn Giao Cho:</td>
-                    <td class="py-2">{{ asset.assigned_to_name or '-' }}</td>
+                    <td class="py-2">
+                        {% if asset.assigned_to_name %}
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+                                </svg>
+                                {{ asset.assigned_to_name }}
+                            </span>
+                        {% else %}
+                            <span class="text-gray-400 italic text-sm">Chưa cấp</span>
+                        {% endif %}
+                    </td>
                 </tr>
                 <tr class="border-b">
                     <td class="py-2 font-medium text-gray-600">Ngày Tạo:</td>

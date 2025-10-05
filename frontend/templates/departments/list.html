@@ -10,6 +10,43 @@
       + Thêm Phòng ban mới
     </button>
   </div>
+
+  <!-- Filters -->
+  <form method="GET" id="filterForm" class="mb-4 bg-gray-50 p-4 rounded-lg">
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium mb-1">Tìm kiếm</label>
+        <input type="text" name="search" value="{{ filters.search or '' }}"
+               placeholder="Tên phòng ban, mô tả..."
+               class="border rounded px-3 py-2 w-full text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Sắp xếp theo</label>
+        <select name="sort_by" onchange="document.getElementById('filterForm').submit()" class="border rounded px-3 py-2 w-full text-sm">
+          <option value="">Mặc định</option>
+          <option value="name" {% if filters.sort_by == 'name' %}selected{% endif %}>Tên</option>
+          <option value="user_count" {% if filters.sort_by == 'user_count' %}selected{% endif %}>Số người</option>
+          <option value="asset_count" {% if filters.sort_by == 'asset_count' %}selected{% endif %}>Số tài sản</option>
+          <option value="total_value" {% if filters.sort_by == 'total_value' %}selected{% endif %}>Tổng giá trị</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Thứ tự</label>
+        <select name="sort_order" onchange="document.getElementById('filterForm').submit()" class="border rounded px-3 py-2 w-full text-sm">
+          <option value="asc" {% if filters.sort_order == 'asc' %}selected{% endif %}>Tăng dần</option>
+          <option value="desc" {% if filters.sort_order == 'desc' %}selected{% endif %}>Giảm dần</option>
+        </select>
+      </div>
+      <div class="flex items-end gap-2">
+        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm flex-1">
+          Lọc
+        </button>
+        <a href="{{ url_for('departments') }}" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 text-sm">
+          Xóa
+        </a>
+      </div>
+    </div>
+  </form>
   <div
     id="addDepartmentForm"
     style="display: none"
@@ -65,7 +102,7 @@
       <div class="space-y-2 text-sm">
         <div class="flex justify-between">
           <span class="text-gray-600">Quản lý phòng:</span>
-          <span class="font-medium">{{ dept.manager_name or '-' }}</span>
+          <span class="font-medium">{{ dept.manager_names or '-' }}</span>
         </div>
         <div class="flex justify-between">
           <span class="text-gray-600">Nhân sự:</span>

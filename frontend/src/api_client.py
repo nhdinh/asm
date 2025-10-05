@@ -30,14 +30,10 @@ class ApiClient:
                 json={"username": username, "password": password},
                 timeout=10,
             )
-
-            if response is not None:
-                return response
-            else:
-                raise
+            return response
         except Exception as e:
             self.app.logger.exception(e)
-            return {"message": "API Error", "status_code": 400}
+            return None
 
     def get_assets(self, filters=None):
         try:
@@ -76,9 +72,21 @@ class ApiClient:
             self.app.logger.error(f"Update asset error: {str(e)}")
             raise
 
-    def get_departments(self):
+    def get_departments(self, page=None, per_page=None, sort_by=None, sort_order=None, search=None):
         try:
-            response = self.session.get(f"{self.base_url}/departments", timeout=10)
+            params = {}
+            if page:
+                params['page'] = page
+            if per_page:
+                params['per_page'] = per_page
+            if sort_by:
+                params['sort_by'] = sort_by
+            if sort_order:
+                params['sort_order'] = sort_order
+            if search:
+                params['search'] = search
+
+            response = self.session.get(f"{self.base_url}/departments", params=params, timeout=10)
             response.raise_for_status()
 
             return response.json()
@@ -146,9 +154,25 @@ class ApiClient:
             raise
 
     # Users API
-    def get_users(self):
+    def get_users(self, page=None, per_page=None, sort_by=None, sort_order=None, search=None, role=None, department_id=None):
         try:
-            response = self.session.get(f"{self.base_url}/users", timeout=10)
+            params = {}
+            if page:
+                params['page'] = page
+            if per_page:
+                params['per_page'] = per_page
+            if sort_by:
+                params['sort_by'] = sort_by
+            if sort_order:
+                params['sort_order'] = sort_order
+            if search:
+                params['search'] = search
+            if role:
+                params['role'] = role
+            if department_id:
+                params['department_id'] = department_id
+
+            response = self.session.get(f"{self.base_url}/users", params=params, timeout=10)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -171,6 +195,15 @@ class ApiClient:
             )
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as e:
+            # Try to extract error message from response
+            try:
+                error_data = e.response.json()
+                error_message = error_data.get("message", str(e))
+            except:
+                error_message = str(e)
+            self.app.logger.error(f"Create user error: {error_message}")
+            raise Exception(error_message)
         except Exception as e:
             self.app.logger.error(f"Create user error: {str(e)}")
             raise
@@ -411,4 +444,108 @@ class ApiClient:
             return response.json()
         except Exception as e:
             self.app.logger.error(f"Update settings error: {str(e)}")
+            raise
+
+    # Profile API
+    def update_profile(self, profile_data):
+        """Update current user's profile"""
+        try:
+            response = self.session.put(
+                f"{self.base_url}/auth/profile",
+                json=profile_data,
+                timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Update profile error: {str(e)}")
+            raise
+
+    def change_password(self, password_data):
+        """Change current user's password"""
+        try:
+            response = self.session.post(
+                f"{self.base_url}/auth/change-password",
+                json=password_data,
+                timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            # Try to extract error message from response
+            try:
+                error_data = e.response.json()
+                error_message = error_data.get("message", str(e))
+            except:
+                error_message = str(e)
+            self.app.logger.error(f"Change password error: {error_message}")
+            raise Exception(error_message)
+        except Exception as e:
+            self.app.logger.error(f"Change password error: {str(e)}")
+            raise
+
+    # Category API
+    def get_categories(self, page=None, per_page=None, sort_by=None, sort_order=None, search=None):
+        try:
+            params = {}
+            if page:
+                params['page'] = page
+            if per_page:
+                params['per_page'] = per_page
+            if sort_by:
+                params['sort_by'] = sort_by
+            if sort_order:
+                params['sort_order'] = sort_order
+            if search:
+                params['search'] = search
+
+            response = self.session.get(f"{self.base_url}/categories", params=params, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get categories error: {str(e)}")
+            raise
+
+    def get_category(self, category_id):
+        try:
+            response = self.session.get(f"{self.base_url}/categories/{category_id}", timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get category error: {str(e)}")
+            raise
+
+    def create_category(self, category_data):
+        try:
+            response = self.session.post(
+                f"{self.base_url}/categories", json=category_data, timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Create category error: {str(e)}")
+            raise
+
+    def update_category(self, category_id, category_data):
+        try:
+            response = self.session.put(
+                f"{self.base_url}/categories/{category_id}",
+                json=category_data,
+                timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Update category error: {str(e)}")
+            raise
+
+    def delete_category(self, category_id):
+        try:
+            response = self.session.delete(
+                f"{self.base_url}/categories/{category_id}", timeout=10
+            )
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            self.app.logger.error(f"Delete category error: {str(e)}")
             raise

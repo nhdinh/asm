@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block page_title %}Thêm Loại Tài Sản{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+    <h3 class="text-lg font-bold mb-6">Thêm Loại Tài Sản Mới</h3>
+
+    <form method="POST">
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Tên Loại Tài Sản <span class="text-red-500">*</span></label>
+                <input type="text" name="name" required
+                       class="border rounded px-3 py-2 w-full"
+                       placeholder="Ví dụ: Laptop, Máy in, Bàn ghế...">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Mô Tả</label>
+                <textarea name="description" rows="4"
+                          class="border rounded px-3 py-2 w-full"
+                          placeholder="Mô tả chi tiết về loại tài sản này..."></textarea>
+            </div>
+        </div>
+
+        <div class="mt-6 flex gap-2">
+            <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                Tạo Loại Tài Sản
+            </button>
+            <a href="{{ url_for('categories') }}" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                Hủy
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}
