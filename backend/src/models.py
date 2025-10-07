@@ -1,13 +1,12 @@
 from app import db
 from datetime import datetime
-from enum import Enum
+from enum import Enum, StrEnum
 import bcrypt
 
 
-class UserRole(Enum):
-    ADMIN = "admin"
-    MANAGER = "manager"
-    VIEWER = "viewer"
+class UserRole(StrEnum):
+    ADMIN = "ADMIN"
+    USER = "USER"
 
 
 class AssetStatus(Enum):
@@ -21,19 +20,22 @@ class ActivityStatus(Enum):
     SUCCESS = "success"
 
 
-# Association table for many-to-many relationship between User and Department
-user_departments = db.Table('user_departments',
-    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
-    db.Column('department_id', db.Integer, db.ForeignKey('departments.id'), primary_key=True),
-    db.Column('assigned_at', db.DateTime, default=datetime.utcnow)
-)
+# Association object for many-to-many relationship between User and Department
+class UserDepartment(db.Model):
+    __tablename__ = "user_departments"
 
-# Association table for many-to-many relationship between Department and Managers
-department_managers = db.Table('department_managers',
-    db.Column('department_id', db.Integer, db.ForeignKey('departments.id'), primary_key=True),
-    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
-    db.Column('assigned_at', db.DateTime, default=datetime.utcnow)
-)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
+    department_id = db.Column(
+        db.Integer, db.ForeignKey("departments.id"), primary_key=True
+    )
+    assigned_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_manager = db.Column(
+        db.Boolean, default=False
+    )  # Indicates if user manages this department
+
+    # Relationships
+    user = db.relationship("User", back_populates="department_associations")
+    department = db.relationship("Department", back_populates="user_associations")
 
 
 class User(db.Model):
@@ -44,17 +46,31 @@ class User(db.Model):
     fullname = db.Column(db.String(100))
     email = db.Column(db.String(100), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.Enum(UserRole, name='userrole', values_callable=lambda obj: [e.value for e in obj]), nullable=False)
-    must_change_password = db.Column(db.Boolean, default=False)
-    items_per_page = db.Column(db.Integer, default=None)  # None means use system default
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    # Many-to-many relationship with Department
-    departments = db.relationship(
-        "Department",
-        secondary=user_departments,
-        backref=db.backref("users", lazy="dynamic")
+    role = db.Column(
+        db.Enum(
+            UserRole,
+            name="userrole",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        nullable=False,
     )
+    must_change_password = db.Column(db.Boolean, default=False)
+    items_per_page = db.Column(
+        db.Integer, default=None
+    )  # None means use system default
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    deleted_at = db.Column(db.DateTime, nullable=True)
+
+    # Association object relationship
+    department_associations = db.relationship(
+        "UserDepartment", back_populates="user", cascade="all, delete-orphan"
+    )
+
+    # Convenience property to get departments
+    @property
+    def departments(self):
+        return [assoc.department for assoc in self.department_associations]
+
     activities = db.relationship("UserActivity", backref="user", lazy="dynamic")
 
     def set_password(self, password):
@@ -67,7 +83,29 @@ class User(db.Model):
             password.encode("utf-8"), self.password_hash.encode("utf-8")
         )
 
+    @classmethod
+    def query_all(cls, include_deleted=False):
+        """Query users with option to include soft-deleted records"""
+        if include_deleted:
+            return cls.query
+        else:
+            return cls.query.filter(cls.deleted_at.is_(None))
+
     def to_dict(self):
+        # Build departments with is_manager flag, excluding soft-deleted departments
+        departments_with_manager = []
+        for assoc in self.department_associations:
+            # Skip soft-deleted departments
+            if assoc.department.deleted_at is not None:
+                continue
+            departments_with_manager.append(
+                {
+                    "id": assoc.department.id,
+                    "name": assoc.department.name,
+                    "is_manager": assoc.is_manager,
+                }
+            )
+
         return {
             "id": self.id,
             "username": self.username,
@@ -76,7 +114,7 @@ class User(db.Model):
             "role": self.role.value,
             "must_change_password": self.must_change_password,
             "items_per_page": self.items_per_page,
-            "departments": [{"id": dept.id, "name": dept.name} for dept in self.departments],
+            "departments": departments_with_manager,
             "created_at": self.created_at.isoformat(),
         }
 
@@ -87,44 +125,93 @@ class Department(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
     description = db.Column(db.Text)
-    manager_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)  # One manager per department
     asset_count = db.Column(db.Integer)
     user_count = db.Column(db.Integer)
     total_value = db.Column(db.Float)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    deleted_at = db.Column(db.DateTime, nullable=True)
 
     assets = db.relationship("Asset", backref="department", lazy="dynamic")
-    manager = db.relationship("User", foreign_keys=[manager_id])  # Keep for backward compatibility
 
-    # Many-to-many relationship with managers
-    managers = db.relationship(
-        "User",
-        secondary=department_managers,
-        backref=db.backref("managed_departments", lazy="dynamic")
+    # Association object relationship
+    user_associations = db.relationship(
+        "UserDepartment", back_populates="department", cascade="all, delete-orphan"
     )
 
-    def to_dict(self, include_details=False):
+    # to get users
+    def users(self, include_deleted=False):
+        """Return all users in this department"""
+
+        # Return a query-like object for backward compatibility
+        class UserList:
+            def __init__(self, users):
+                if include_deleted:
+                    self._users = [u for u in users]
+                else:
+                    self._users = [u for u in users if u.deleted_at is None]
+
+            def all(self):
+                return self._users
+
+            def count(self):
+                return len(self._users)
+
+        return UserList([assoc.user for assoc in self.user_associations])
+
+    def managers(self, include_deleted=False):
+        """Return users who have is_manager=True for this department"""
+        if include_deleted:
+            return [assoc.user for assoc in self.user_associations if assoc.is_manager]
+        else:
+            return [
+                assoc.user
+                for assoc in self.user_associations
+                if assoc.is_manager and assoc.user.deleted_at is None
+            ]
+
+    @classmethod
+    def query_all(cls, include_deleted=False):
+        """Query departments with option to include soft-deleted records"""
+        if include_deleted:
+            return cls.query
+        else:
+            return cls.query.filter(cls.deleted_at.is_(None))
+
+    def to_dict(self, include_details=False, include_deleted=False):
         # Calculate total value from actual assets
         total_value = sum(asset.purchase_value or 0 for asset in self.assets.all())
 
-        # Get managers list (use new managers relationship, fallback to old manager_id if empty)
-        managers_list = list(self.managers) if self.managers else []
-        if not managers_list and self.manager:
-            managers_list = [self.manager]
+        # Get managers list (users with MANAGER role in this department)
+        managers_list = self.managers(include_deleted)
 
         result = {
             "id": self.id,
             "name": self.name,
             "description": self.description,
-            "manager_id": self.manager_id,  # Keep for backward compatibility
-            "manager_name": self.manager.fullname if self.manager else None,  # Keep for backward compatibility
-            "managers": [{"id": m.id, "fullname": m.fullname, "username": m.username} for m in managers_list],
-            "manager_names": ", ".join([m.fullname for m in managers_list]) if managers_list else None,
+            "manager_names": (
+                ", ".join([m.fullname for m in managers_list])
+                if managers_list
+                else None
+            ),
             "created_at": self.created_at.isoformat(),
             "asset_count": self.assets.count(),
-            "user_count": self.users.count(),
+            "user_count": self.users(include_deleted).count(),
             "total_value": total_value,
         }
+
+        if include_deleted:
+            result["managers"] = [
+                {"id": m.id, "fullname": m.fullname, "username": m.username}
+                for m in managers_list
+            ]
+        else:
+            result["managers"] = (
+                [
+                    {"id": m.id, "fullname": m.fullname, "username": m.username}
+                    for m in managers_list
+                    if (not include_deleted and m.deleted_at is None)
+                ],
+            )
 
         if include_details:
             # Include users list
@@ -133,9 +220,9 @@ class Department(db.Model):
                     "id": user.id,
                     "username": user.username,
                     "email": user.email,
-                    "role": user.role.value
+                    "role": user.role.value,
                 }
-                for user in self.users.all()
+                for user in self.users(include_deleted).all()
             ]
 
         return result
@@ -148,7 +235,9 @@ class AssetCategory(db.Model):
     name = db.Column(db.String(100), unique=True, nullable=False)
     description = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     # Relationship to assets
     assets = db.relationship("Asset", backref="category_obj", lazy="dynamic")
@@ -172,7 +261,9 @@ class Asset(db.Model):
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
     category = db.Column(db.String(50))  # Keep for backward compatibility
-    category_id = db.Column(db.Integer, db.ForeignKey("asset_categories.id"), nullable=True)  # New foreign key
+    category_id = db.Column(
+        db.Integer, db.ForeignKey("asset_categories.id"), nullable=True
+    )  # New foreign key
     purchase_value = db.Column(db.Float)
     purchase_date = db.Column(db.Date)
     department_id = db.Column(
@@ -183,14 +274,24 @@ class Asset(db.Model):
     # New fields for asset assignment and condition
     assigned_to_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     condition_notes = db.Column(db.Text)
+    propose_for_liquidation = db.Column(db.Boolean, default=False, nullable=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    deleted_at = db.Column(db.DateTime, nullable=True)
 
     transfers = db.relationship("AssetTransfer", backref="asset", lazy="dynamic")
     assigned_to = db.relationship("User", foreign_keys=[assigned_to_id])
+
+    @classmethod
+    def query_all(cls, include_deleted=False):
+        """Query assets with option to include soft-deleted records"""
+        if include_deleted:
+            return cls.query
+        else:
+            return cls.query.filter(cls.deleted_at.is_(None))
 
     def to_dict(self):
         return {
@@ -200,7 +301,9 @@ class Asset(db.Model):
             "description": self.description,
             "category": self.category,  # Backward compatibility
             "category_id": self.category_id,
-            "category_name": self.category_obj.name if self.category_obj else self.category,
+            "category_name": (
+                self.category_obj.name if self.category_obj else self.category
+            ),
             "purchase_value": self.purchase_value,
             "purchase_date": (
                 self.purchase_date.isoformat() if self.purchase_date else None
@@ -211,6 +314,7 @@ class Asset(db.Model):
             "assigned_to_id": self.assigned_to_id,
             "assigned_to_name": self.assigned_to.fullname if self.assigned_to else None,
             "condition_notes": self.condition_notes,
+            "propose_for_liquidation": self.propose_for_liquidation,
             "created_at": self.created_at.isoformat(),
         }
 
@@ -222,7 +326,9 @@ class AssetTransfer(db.Model):
     asset_id = db.Column(db.Integer, db.ForeignKey("assets.id"), nullable=False)
     from_department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
     to_department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
-    assigned_to_id = db.Column(db.Integer, db.ForeignKey("users.id"))  # User receiving the asset
+    assigned_to_id = db.Column(
+        db.Integer, db.ForeignKey("users.id")
+    )  # User receiving the asset
     transferred_by = db.Column(db.Integer, db.ForeignKey("users.id"))
     transfer_date = db.Column(db.DateTime, default=datetime.utcnow)
     notes = db.Column(db.Text)
@@ -241,9 +347,15 @@ class AssetTransfer(db.Model):
             ),
             "to_department": self.to_department.name if self.to_department else None,
             "assigned_to": self.assigned_to.fullname if self.assigned_to else None,
-            "assigned_to_username": self.assigned_to.username if self.assigned_to else None,
-            "transferred_by": self.transferred_by_user.username if self.transferred_by_user else None,
-            "transferred_by_fullname": self.transferred_by_user.fullname if self.transferred_by_user else None,
+            "assigned_to_username": (
+                self.assigned_to.username if self.assigned_to else None
+            ),
+            "transferred_by": (
+                self.transferred_by_user.username if self.transferred_by_user else None
+            ),
+            "transferred_by_fullname": (
+                self.transferred_by_user.fullname if self.transferred_by_user else None
+            ),
             "transfer_date": self.transfer_date.isoformat(),
             "notes": self.notes,
         }
@@ -280,6 +392,7 @@ class UserActivity(db.Model):
 
 class SystemSetting(db.Model):
     """System configuration settings"""
+
     __tablename__ = "system_settings"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -287,7 +400,9 @@ class SystemSetting(db.Model):
     value = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text)
     data_type = db.Column(db.String(20), default="string")  # string, int, float, bool
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
     updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
 
     def to_dict(self):
@@ -310,3 +425,57 @@ class SystemSetting(db.Model):
         elif self.data_type == "bool":
             return self.value.lower() in ["true", "1", "yes"]
         return self.value
+
+
+class EmailConfig(db.Model):
+    """Email server configuration"""
+
+    __tablename__ = "email_config"
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Provider selection: smtp or sendgrid
+    provider = db.Column(db.String(20), default="smtp", nullable=False)
+    # SMTP settings (for provider=smtp)
+    smtp_host = db.Column(db.String(255))
+    smtp_port = db.Column(db.Integer, default=587)
+    smtp_username = db.Column(db.String(255))
+    smtp_password = db.Column(db.String(255))
+    use_tls = db.Column(db.Boolean, default=True)
+    use_ssl = db.Column(db.Boolean, default=False)
+    # SendGrid settings (for provider=sendgrid)
+    sendgrid_api_key = db.Column(db.String(255))
+    # Common settings
+    from_email = db.Column(db.String(255), nullable=False)
+    from_name = db.Column(db.String(255), default="Asset Management System")
+    enabled = db.Column(db.Boolean, default=False)
+    send_welcome_email = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    def to_dict(self, include_secrets=False):
+        result = {
+            "id": self.id,
+            "provider": self.provider,
+            "smtp_host": self.smtp_host,
+            "smtp_port": self.smtp_port,
+            "smtp_username": self.smtp_username,
+            "from_email": self.from_email,
+            "from_name": self.from_name,
+            "use_tls": self.use_tls,
+            "use_ssl": self.use_ssl,
+            "enabled": self.enabled,
+            "send_welcome_email": self.send_welcome_email,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "updated_by": self.updated_by,
+        }
+        if include_secrets:
+            result["smtp_password"] = self.smtp_password
+            result["sendgrid_api_key"] = self.sendgrid_api_key
+        else:
+            result["has_smtp_password"] = bool(self.smtp_password)
+            result["has_sendgrid_api_key"] = bool(self.sendgrid_api_key)
+        return result

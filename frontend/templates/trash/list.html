@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+
+{% block page_title %}Thùng Rác{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow p-6">
+    <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <svg class="w-8 h-8 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+            </svg>
+            Thùng Rác
+        </h3>
+        <p class="text-sm text-gray-600 mt-2">Quản lý các dữ liệu đã xóa - Khôi phục hoặc xóa vĩnh viễn</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-200 mb-6">
+        <nav class="-mb-px flex space-x-8">
+            <button onclick="showTab('users')" id="tab-users"
+                    class="tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-blue-500 text-blue-600">
+                👤 Người Dùng
+                <span class="ml-2 bg-blue-100 text-blue-600 py-0.5 px-2 rounded-full text-xs">{{ trash_users|length }}</span>
+            </button>
+            <button onclick="showTab('departments')" id="tab-departments"
+                    class="tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                🏢 Phòng Ban
+                <span class="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2 rounded-full text-xs">{{ trash_departments|length }}</span>
+            </button>
+            <button onclick="showTab('assets')" id="tab-assets"
+                    class="tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                📦 Tài Sản
+                <span class="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2 rounded-full text-xs">{{ trash_assets|length }}</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Users Tab -->
+    <div id="content-users" class="tab-content">
+        {% if trash_users and trash_users|length > 0 %}
+        <div class="overflow-x-auto">
+            <table class="w-full border-collapse">
+                <thead>
+                    <tr class="bg-gray-100 border-b">
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">ID</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Tên Đăng Nhập</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Họ Tên</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Email</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Vai Trò</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Ngày Xóa</th>
+                        <th class="px-4 py-3 text-center text-sm font-semibold text-gray-700">Thao Tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in trash_users %}
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="px-4 py-3 text-sm">{{ user.id }}</td>
+                        <td class="px-4 py-3 text-sm font-medium">{{ user.username }}</td>
+                        <td class="px-4 py-3 text-sm">{{ user.fullname or '-' }}</td>
+                        <td class="px-4 py-3 text-sm">{{ user.email }}</td>
+                        <td class="px-4 py-3 text-sm">
+                            <span class="px-2 py-1 rounded text-xs font-medium
+                                {% if user.role == 'ADMIN' %}bg-red-100 text-red-800
+                                {% else %}bg-blue-100 text-blue-800{% endif %}">
+                                {{ user.role }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-600">{{ user.deleted_at|datetime }}</td>
+                        <td class="px-4 py-3 text-center">
+                            <div class="flex gap-2 justify-center">
+                                <form method="POST" action="{{ url_for('restore_user', user_id=user.id) }}" class="inline">
+                                    <button type="submit"
+                                            class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 flex items-center gap-1"
+                                            onclick="return confirm('Bạn có chắc chắn muốn khôi phục người dùng này?')">
+                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Khôi Phục
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ url_for('permanent_delete_user', user_id=user.id) }}" class="inline">
+                                    <button type="submit"
+                                            class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 flex items-center gap-1"
+                                            onclick="return confirm('⚠️ CẢNH BÁO: Xóa vĩnh viễn không thể hoàn tác!\n\nBạn có chắc chắn muốn xóa vĩnh viễn người dùng này?')">
+                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Xóa Vĩnh Viễn
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-12 bg-gray-50 rounded-lg">
+            <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+            </svg>
+            <p class="text-gray-600 font-medium">Thùng rác trống</p>
+            <p class="text-gray-500 text-sm mt-1">Không có người dùng nào đã bị xóa</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Departments Tab -->
+    <div id="content-departments" class="tab-content hidden">
+        {% if trash_departments and trash_departments|length > 0 %}
+        <div class="overflow-x-auto">
+            <table class="w-full border-collapse">
+                <thead>
+                    <tr class="bg-gray-100 border-b">
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">ID</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Tên Phòng Ban</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Mã</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Mô Tả</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Ngày Xóa</th>
+                        <th class="px-4 py-3 text-center text-sm font-semibold text-gray-700">Thao Tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for dept in trash_departments %}
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="px-4 py-3 text-sm">{{ dept.id }}</td>
+                        <td class="px-4 py-3 text-sm font-medium">{{ dept.name }}</td>
+                        <td class="px-4 py-3 text-sm">{{ dept.code }}</td>
+                        <td class="px-4 py-3 text-sm">{{ dept.description or '-' }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-600">{{ dept.deleted_at|datetime }}</td>
+                        <td class="px-4 py-3 text-center">
+                            <div class="flex gap-2 justify-center">
+                                <form method="POST" action="{{ url_for('restore_department', dept_id=dept.id) }}" class="inline">
+                                    <button type="submit"
+                                            class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 flex items-center gap-1"
+                                            onclick="return confirm('Bạn có chắc chắn muốn khôi phục phòng ban này?')">
+                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Khôi Phục
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ url_for('permanent_delete_department', dept_id=dept.id) }}" class="inline">
+                                    <button type="submit"
+                                            class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 flex items-center gap-1"
+                                            onclick="return confirm('⚠️ CẢNH BÁO: Xóa vĩnh viễn không thể hoàn tác!\n\nBạn có chắc chắn muốn xóa vĩnh viễn phòng ban này?')">
+                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Xóa Vĩnh Viễn
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-12 bg-gray-50 rounded-lg">
+            <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+            </svg>
+            <p class="text-gray-600 font-medium">Thùng rác trống</p>
+            <p class="text-gray-500 text-sm mt-1">Không có phòng ban nào đã bị xóa</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Assets Tab -->
+    <div id="content-assets" class="tab-content hidden">
+        {% if trash_assets and trash_assets|length > 0 %}
+        <div class="overflow-x-auto">
+            <table class="w-full border-collapse">
+                <thead>
+                    <tr class="bg-gray-100 border-b">
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">ID</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Mã Tài Sản</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Tên Tài Sản</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Loại</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Trạng Thái</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Giá Trị</th>
+                        <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700">Ngày Xóa</th>
+                        <th class="px-4 py-3 text-center text-sm font-semibold text-gray-700">Thao Tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for asset in trash_assets %}
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="px-4 py-3 text-sm">{{ asset.id }}</td>
+                        <td class="px-4 py-3 text-sm font-medium">{{ asset.code }}</td>
+                        <td class="px-4 py-3 text-sm">{{ asset.name }}</td>
+                        <td class="px-4 py-3 text-sm">{{ asset.category or '-' }}</td>
+                        <td class="px-4 py-3 text-sm">
+                            <span class="px-2 py-1 rounded text-xs font-medium
+                                {% if asset.status == 'ACTIVE' %}bg-green-100 text-green-800
+                                {% elif asset.status == 'DAMAGED' %}bg-yellow-100 text-yellow-800
+                                {% else %}bg-red-100 text-red-800{% endif %}">
+                                {% if asset.status == 'ACTIVE' %}Hoạt Động
+                                {% elif asset.status == 'DAMAGED' %}Hỏng
+                                {% else %}Đã Thanh Lý{% endif %}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-sm">{{ "{:,.0f}".format(asset.purchase_value) if asset.purchase_value else '-' }} VNĐ</td>
+                        <td class="px-4 py-3 text-sm text-gray-600">{{ asset.deleted_at|datetime }}</td>
+                        <td class="px-4 py-3 text-center">
+                            <div class="flex gap-2 justify-center">
+                                <form method="POST" action="{{ url_for('restore_asset', asset_id=asset.id) }}" class="inline">
+                                    <button type="submit"
+                                            class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 flex items-center gap-1"
+                                            onclick="return confirm('Bạn có chắc chắn muốn khôi phục tài sản này?')">
+                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Khôi Phục
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ url_for('permanent_delete_asset', asset_id=asset.id) }}" class="inline">
+                                    <button type="submit"
+                                            class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 flex items-center gap-1"
+                                            onclick="return confirm('⚠️ CẢNH BÁO: Xóa vĩnh viễn không thể hoàn tác!\n\nBạn có chắc chắn muốn xóa vĩnh viễn tài sản này?')">
+                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Xóa Vĩnh Viễn
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-12 bg-gray-50 rounded-lg">
+            <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+            </svg>
+            <p class="text-gray-600 font-medium">Thùng rác trống</p>
+            <p class="text-gray-500 text-sm mt-1">Không có tài sản nào đã bị xóa</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function showTab(tabName) {
+    // Hide all tab contents
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.add('hidden');
+    });
+
+    // Remove active styling from all tabs
+    document.querySelectorAll('.tab-button').forEach(button => {
+        button.classList.remove('border-blue-500', 'text-blue-600');
+        button.classList.add('border-transparent', 'text-gray-500');
+    });
+
+    // Show selected tab content
+    document.getElementById('content-' + tabName).classList.remove('hidden');
+
+    // Add active styling to selected tab
+    const activeTab = document.getElementById('tab-' + tabName);
+    activeTab.classList.add('border-blue-500', 'text-blue-600');
+    activeTab.classList.remove('border-transparent', 'text-gray-500');
+}
+</script>
+{% endblock %}

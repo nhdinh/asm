@@ -23,15 +23,23 @@
             </div>
             <div class="col-span-2">
                 <label class="block text-sm font-medium mb-1">Mật Khẩu *</label>
-                <input type="password" name="password" id="password" required class="border rounded px-3 py-2 w-full">
+                <div class="relative">
+                    <input type="password" name="password" id="password" required class="border rounded px-3 py-2 pr-10 w-full">
+                    <button type="button" onclick="togglePasswordVisibility('password', 'passwordEyeIcon')"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none">
+                        <svg id="passwordEyeIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                        </svg>
+                    </button>
+                </div>
                 {% include 'components/password_validator.html' %}
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">Vai Trò *</label>
                 <select name="role" required class="border rounded px-3 py-2 w-full">
                     <option value="admin">Admin</option>
-                    <option value="manager">Manager</option>
-                    <option value="viewer">Viewer</option>
+                    <option value="user" selected>User</option>
                 </select>
             </div>
             <div class="col-span-2">
@@ -43,16 +51,36 @@
             </div>
             <div class="col-span-2">
                 <label class="block text-sm font-medium mb-1">Phòng Ban</label>
-                <div class="border rounded px-3 py-2 max-h-40 overflow-y-auto">
+                <div class="border rounded px-3 py-2 max-h-60 overflow-y-auto bg-gray-50">
                     {% for dept in departments %}
-                    <div class="flex items-center mb-2">
-                        <input type="checkbox" name="department_ids" value="{{ dept.id }}"
-                               id="dept_{{ dept.id }}" class="mr-2">
-                        <label for="dept_{{ dept.id }}" class="cursor-pointer">{{ dept.name }}</label>
+                    <div class="mb-3 p-2 border-b rounded">
+                        <div class="flex items-center mb-1">
+                            <input type="checkbox" name="department_ids" value="{{ dept.id }}"
+                                   id="dept_{{ dept.id }}" class="mr-2 dept-checkbox"
+                                   onchange="toggleManagerCheckbox({{ dept.id }})">
+                            <label for="dept_{{ dept.id }}" class="cursor-pointer font-medium flex-1">
+                                {{ dept.name }}
+                            </label>
+                        </div>
+                        <div class="ml-6 manager-checkbox-container" id="manager_container_{{ dept.id }}"
+                             style="display:none">
+                            <label class="flex items-center cursor-pointer text-sm">
+                                <input type="checkbox" name="manager_department_ids" value="{{ dept.id }}"
+                                       id="manager_{{ dept.id }}" class="mr-2">
+                                <span class="text-purple-700">
+                                    <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+                                    </svg>
+                                    Quản lý phòng ban này
+                                </span>
+                            </label>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
-                <p class="text-xs text-gray-500 mt-1">Chọn một hoặc nhiều phòng ban</p>
+                <p class="text-xs text-gray-500 mt-1">
+                    <strong>Chọn phòng ban</strong> và đánh dấu <strong class="text-purple-700">Quản lý</strong> nếu người dùng là trưởng phòng
+                </p>
             </div>
         </div>
 
@@ -124,5 +152,36 @@ document.querySelector('form').addEventListener('submit', function(e) {
         }
     }
 });
+
+function togglePasswordVisibility(inputId, iconId) {
+    const input = document.getElementById(inputId);
+    const icon = document.getElementById(iconId);
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.innerHTML = `
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+        `;
+    } else {
+        input.type = 'password';
+        icon.innerHTML = `
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+        `;
+    }
+}
+
+function toggleManagerCheckbox(deptId) {
+    const deptCheckbox = document.getElementById('dept_' + deptId);
+    const managerContainer = document.getElementById('manager_container_' + deptId);
+    const managerCheckbox = document.getElementById('manager_' + deptId);
+
+    if (deptCheckbox.checked) {
+        managerContainer.style.display = 'block';
+    } else {
+        managerContainer.style.display = 'none';
+        managerCheckbox.checked = false; // Uncheck manager if department unchecked
+    }
+}
 </script>
 {% endblock %}

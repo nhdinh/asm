@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, Response
+from flask import Blueprint, current_app, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db, User, UserRole, UserActivity, Department, ActivityStatus
 from audit_logger import audit_logger
@@ -21,13 +21,20 @@ def get_users():
     # Get sort parameters
     sort_by, sort_order = get_sort_params()
 
-    # Build base query
-    query = User.query
+    # Build base query - exclude soft-deleted users by default
+    include_deleted = request.args.get("include_deleted", "false").lower() == "true"
+    query = User.query_all(include_deleted=include_deleted)
+
+    # Debug logging
+    from flask import current_app
+    total_users = User.query.count()
+    filtered_users = query.count()
+    current_app.logger.info(f"Total users in DB: {total_users}, After filter: {filtered_users}, include_deleted: {include_deleted}")
 
     # Apply filters
-    search = request.args.get('search')
-    role = request.args.get('role')
-    department_id = request.args.get('department_id')
+    search = request.args.get("search")
+    role = request.args.get("role")
+    department_id = request.args.get("department_id")
 
     if search:
         search_filter = f"%{search}%"
@@ -35,7 +42,7 @@ def get_users():
             db.or_(
                 User.username.ilike(search_filter),
                 User.email.ilike(search_filter),
-                User.fullname.ilike(search_filter)
+                User.fullname.ilike(search_filter),
             )
         )
 
@@ -49,18 +56,21 @@ def get_users():
     if department_id:
         query = query.join(User.departments).filter(Department.id == int(department_id))
 
+    if include_deleted is not None and include_deleted == False:
+        query = query.filter(User.deleted_at is None)
+
     # Apply sorting
     valid_sort_fields = {
-        'username': User.username,
-        'email': User.email,
-        'fullname': User.fullname,
-        'role': User.role,
-        'created_at': User.created_at
+        "username": User.username,
+        "email": User.email,
+        "fullname": User.fullname,
+        "role": User.role,
+        "created_at": User.created_at,
     }
 
     if sort_by in valid_sort_fields:
         sort_column = valid_sort_fields[sort_by]
-        if sort_order == 'desc':
+        if sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
@@ -69,8 +79,31 @@ def get_users():
         query = query.order_by(User.created_at.desc())
 
     pagination_result = paginate_query(query, user=current_user)
+    current_app.logger.info(f"Pagination items count: {len(pagination_result.items)}")
 
-    return jsonify(create_pagination_response(pagination_result, lambda u: u.to_dict()))
+    # Convert users to dict with error handling
+    items = []
+    for user in pagination_result.items:
+        try:
+            items.append(user.to_dict())
+        except Exception as e:
+            current_app.logger.error(f"Error converting user {user.id} to dict: {e}")
+
+    response = {
+        "items": items,
+        "pagination": {
+            "page": pagination_result.page,
+            "per_page": pagination_result.per_page,
+            "total": pagination_result.total,
+            "total_pages": pagination_result.pages,
+            "has_next": pagination_result.has_next,
+            "has_prev": pagination_result.has_prev,
+            "next_page": pagination_result.next_num if pagination_result.has_next else None,
+            "prev_page": pagination_result.prev_num if pagination_result.has_prev else None,
+        }
+    }
+    current_app.logger.info(f"Returning {len(response.get('items', []))} users in response")
+    return jsonify(response)
 
 
 @users_bp.route("/<int:id>", methods=["GET"])
@@ -114,14 +147,35 @@ def update_user(id):
         # Update departments (many-to-many relationship)
         if "department_ids" in data:
             # Validate non-admins must belong to at least one department
-            if user.role != UserRole.ADMIN and (not data["department_ids"] or len(data["department_ids"]) == 0):
-                return jsonify({"message": "Non-admin users must be assigned to at least one department"}), 400
+            if user.role != UserRole.ADMIN and (
+                not data["department_ids"] or len(data["department_ids"]) == 0
+            ):
+                return (
+                    jsonify(
+                        {
+                            "message": "Non-admin users must be assigned to at least one department"
+                        }
+                    ),
+                    400,
+                )
 
-            user.departments = []
+            # Clear existing associations
+            from models import UserDepartment
+
+            UserDepartment.query.filter_by(user_id=user.id).delete()
+
+            # Get manager department IDs from request (format: {"dept_id": is_manager})
+            manager_dept_ids = data.get("manager_department_ids", [])
+
+            # Add new department associations with is_manager flag
             for dept_id in data["department_ids"]:
                 dept = Department.query.get(dept_id)
                 if dept:
-                    user.departments.append(dept)
+                    is_manager = dept_id in manager_dept_ids
+                    assoc = UserDepartment(
+                        user_id=user.id, department_id=dept_id, is_manager=is_manager
+                    )
+                    db.session.add(assoc)
 
         # Log activity
         activity = UserActivity(
@@ -140,19 +194,20 @@ def update_user(id):
         audit_logger.log(
             user_id=current_user_id,
             username=current_user.username,
-            action='update',
-            entity_type='user',
+            action="update",
+            entity_type="user",
             entity_id=user.id,
             old_values=old_values,
             new_values=user.to_dict(),
             details=f"Updated user {user.username}",
-            ip_address=request.remote_addr
+            ip_address=request.remote_addr,
         )
 
         return jsonify(user.to_dict())
     except Exception as e:
         db.session.rollback()
         import traceback
+
         traceback.print_exc()
         return jsonify({"message": f"Error updating user: {str(e)}"}), 500
 
@@ -173,7 +228,10 @@ def delete_user(id):
     username = user.username
     old_values = user.to_dict()
 
-    db.session.delete(user)
+    # Soft delete - set deleted_at timestamp
+    from datetime import datetime
+
+    user.deleted_at = datetime.utcnow()
 
     # Log activity
     activity = UserActivity(
@@ -182,7 +240,7 @@ def delete_user(id):
         action="delete_user",
         entity_type="user",
         entity_id=id,
-        details=f"Deleted user {username}",
+        details=f"Deleted user {username} (soft delete)",
         status=ActivityStatus.SUCCESS,
     )
     db.session.add(activity)
@@ -192,13 +250,13 @@ def delete_user(id):
     audit_logger.log(
         user_id=current_user_id,
         username=current_user.username,
-        action='delete',
-        entity_type='user',
+        action="delete",
+        entity_type="user",
         entity_id=id,
         old_values=old_values,
-        new_values={},
-        details=f"Deleted user {username}",
-        ip_address=request.remote_addr
+        new_values={"deleted_at": user.deleted_at.isoformat()},
+        details=f"Deleted user {username} (soft delete)",
+        ip_address=request.remote_addr,
     )
 
     return "", 204
@@ -216,7 +274,14 @@ def reset_password(id):
     user = User.query.get_or_404(id)
     data = request.json
 
+    if not data.get("password"):
+        return jsonify({"message": "Password is required"}), 400
+
     user.set_password(data["password"])
+
+    # Optionally force user to change password on next login
+    if data.get("must_change_password", True):
+        user.must_change_password = True
 
     # Log activity
     activity = UserActivity(
@@ -235,16 +300,22 @@ def reset_password(id):
     audit_logger.log(
         user_id=current_user_id,
         username=current_user.username,
-        action='reset_password',
-        entity_type='user',
+        action="reset_password",
+        entity_type="user",
         entity_id=user.id,
-        old_values={'password': '[REDACTED]'},
-        new_values={'password': '[REDACTED]'},
+        old_values={"password": "[REDACTED]"},
+        new_values={
+            "password": "[REDACTED]",
+            "must_change_password": user.must_change_password,
+        },
         details=f"Reset password for user {user.username}",
-        ip_address=request.remote_addr
+        ip_address=request.remote_addr,
     )
 
-    return jsonify({"message": "Password reset successfully"}), 200
+    return (
+        jsonify({"message": "Password reset successfully", "user": user.to_dict()}),
+        200,
+    )
 
 
 @users_bp.route("/sample-csv", methods=["GET"])
@@ -261,18 +332,31 @@ def download_sample_csv():
     writer = csv.writer(output)
 
     # Write header
-    writer.writerow(['username', 'fullname', 'email', 'password', 'role', 'department_ids'])
+    writer.writerow(
+        ["username", "fullname", "email", "password", "role", "department_ids"]
+    )
 
     # Write sample rows
-    writer.writerow(['john.doe', 'John Doe', 'john.doe@example.com', 'password123', 'viewer', '1,2'])
-    writer.writerow(['jane.smith', 'Jane Smith', 'jane.smith@example.com', 'password456', 'manager', '1'])
+    writer.writerow(
+        ["john.doe", "John Doe", "john.doe@example.com", "password123", "viewer", "1,2"]
+    )
+    writer.writerow(
+        [
+            "jane.smith",
+            "Jane Smith",
+            "jane.smith@example.com",
+            "password456",
+            "manager",
+            "1",
+        ]
+    )
 
     # Create response
     output.seek(0)
     return Response(
         output.getvalue(),
-        mimetype='text/csv',
-        headers={'Content-Disposition': 'attachment; filename=users_sample.csv'}
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=users_sample.csv"},
     )
 
 
@@ -285,15 +369,15 @@ def upload_csv():
     if current_user.role != UserRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
-    if 'file' not in request.files:
+    if "file" not in request.files:
         return jsonify({"message": "No file provided"}), 400
 
-    file = request.files['file']
+    file = request.files["file"]
 
-    if file.filename == '':
+    if file.filename == "":
         return jsonify({"message": "No file selected"}), 400
 
-    if not file.filename.endswith('.csv'):
+    if not file.filename.endswith(".csv"):
         return jsonify({"message": "File must be a CSV"}), 400
 
     try:
@@ -304,55 +388,74 @@ def upload_csv():
         created_users = []
         errors = []
 
-        for row_num, row in enumerate(csv_reader, start=2):  # start=2 because row 1 is header
+        for row_num, row in enumerate(
+            csv_reader, start=2
+        ):  # start=2 because row 1 is header
             try:
                 # Validate required fields
-                if not row.get('username') or not row.get('fullname') or not row.get('email') or not row.get('password'):
-                    errors.append(f"Row {row_num}: Missing required fields (username, fullname, email, password)")
+                if (
+                    not row.get("username")
+                    or not row.get("fullname")
+                    or not row.get("email")
+                    or not row.get("password")
+                ):
+                    errors.append(
+                        f"Row {row_num}: Missing required fields (username, fullname, email, password)"
+                    )
                     continue
 
                 # Check if user already exists
-                if User.query.filter_by(username=row['username']).first():
-                    errors.append(f"Row {row_num}: Username '{row['username']}' already exists")
+                if User.query.filter_by(username=row["username"]).first():
+                    errors.append(
+                        f"Row {row_num}: Username '{row['username']}' already exists"
+                    )
                     continue
 
-                if User.query.filter_by(email=row['email']).first():
-                    errors.append(f"Row {row_num}: Email '{row['email']}' already exists")
+                if User.query.filter_by(email=row["email"]).first():
+                    errors.append(
+                        f"Row {row_num}: Email '{row['email']}' already exists"
+                    )
                     continue
 
                 # Parse role
-                role_str = row.get('role', 'viewer').lower()
-                if role_str == 'admin':
+                role_str = row.get("role", "user").lower()
+                if role_str == "admin":
                     role = UserRole.ADMIN
-                elif role_str == 'manager':
-                    role = UserRole.MANAGER
                 else:
-                    role = UserRole.VIEWER
+                    role = UserRole.USER
 
                 # Create user
                 user = User(
-                    username=row['username'],
-                    fullname=row['fullname'],
-                    email=row['email'],
+                    username=row["username"],
+                    fullname=row["fullname"],
+                    email=row["email"],
                     role=role,
-                    must_change_password=True  # Force password change on first login
+                    must_change_password=True,  # Force password change on first login
                 )
-                user.set_password(row['password'])
+                user.set_password(row["password"])
 
                 db.session.add(user)
                 db.session.flush()  # Get user.id
 
                 # Parse and assign departments
-                if row.get('department_ids'):
-                    dept_ids = [int(did.strip()) for did in row['department_ids'].split(',') if did.strip()]
+                if row.get("department_ids"):
+                    dept_ids = [
+                        int(did.strip())
+                        for did in row["department_ids"].split(",")
+                        if did.strip()
+                    ]
 
                     # Validate non-admin users must have at least one department
                     if role != UserRole.ADMIN and len(dept_ids) == 0:
                         db.session.rollback()
-                        errors.append(f"Row {row_num}: Non-admin users must be assigned to at least one department")
+                        errors.append(
+                            f"Row {row_num}: Non-admin users must be assigned to at least one department"
+                        )
                         continue
 
-                    departments = Department.query.filter(Department.id.in_(dept_ids)).all()
+                    departments = Department.query.filter(
+                        Department.id.in_(dept_ids)
+                    ).all()
                     if len(departments) != len(dept_ids):
                         db.session.rollback()
                         errors.append(f"Row {row_num}: Some department IDs not found")
@@ -372,7 +475,15 @@ def upload_csv():
                 )
                 db.session.add(activity)
 
-                created_users.append(user.username)
+                # Store user info for email queueing after commit
+                created_users.append(
+                    {
+                        "username": user.username,
+                        "email": user.email,
+                        "fullname": user.fullname,
+                        "password": row["password"],
+                    }
+                )
 
             except Exception as e:
                 db.session.rollback()
@@ -383,12 +494,33 @@ def upload_csv():
         if created_users:
             db.session.commit()
 
-        return jsonify({
-            "message": f"CSV processed successfully",
-            "created": len(created_users),
-            "created_users": created_users,
-            "errors": errors
-        }), 200 if not errors else 207  # 207 = Multi-Status
+            # Queue welcome emails asynchronously after successful commit
+            try:
+                from email_queue import email_queue
+
+                for user_info in created_users:
+                    email_queue.enqueue_welcome_email(
+                        user_email=user_info["email"],
+                        username=user_info["username"],
+                        password=user_info["password"],
+                        fullname=user_info["fullname"],
+                    )
+            except Exception as e:
+                # Log error but don't fail the CSV upload
+                import logging
+
+                logging.error(f"Error queueing welcome emails for CSV users: {str(e)}")
+
+        return jsonify(
+            {
+                "message": f"CSV processed successfully",
+                "created": len(created_users),
+                "created_users": [u["username"] for u in created_users],
+                "errors": errors,
+            }
+        ), (
+            200 if not errors else 207
+        )  # 207 = Multi-Status
 
     except Exception as e:
         db.session.rollback()

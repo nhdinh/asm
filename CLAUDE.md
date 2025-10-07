@@ -15,6 +15,7 @@ This is an Asset Management System (AMS) built with a Flask-based microservices 
 ## Architecture
 
 ### Backend (Port 5000)
+
 - **Entry Point**: [backend/src/backend.py](backend/src/backend.py)
 - **Application Factory**: [backend/src/app.py](backend/src/app.py) - Flask app configuration with extensions
 - **Common Utilities**: [backend/src/common.py](backend/src/common.py) - Shared utilities and helpers
@@ -32,6 +33,7 @@ This is an Asset Management System (AMS) built with a Flask-based microservices 
   - [reports.py](backend/src/routes/reports.py) - Analytics, reporting, and data export
 
 ### Frontend (Port 3000)
+
 - **Entry Point**: [frontend/src/frontend.py](frontend/src/frontend.py) - Main Flask application with route handlers
 - **Application Factory**: [frontend/src/app.py](frontend/src/app.py) - Flask app factory with configurable template path
 - **API Client**: [frontend/src/api_client.py](frontend/src/api_client.py) - HTTP client wrapper for backend API communication with token management
@@ -46,6 +48,7 @@ This is an Asset Management System (AMS) built with a Flask-based microservices 
   - [components/](frontend/templates/components/) - Reusable UI components
 
 ### Database Models Details
+
 - **Enums**:
   - `UserRole`: ADMIN, MANAGER
   - `AssetStatus`: ACTIVE, DAMAGED, DISPOSED
@@ -124,22 +127,25 @@ pytest -v tests/
 ### Environment Variables
 
 **Backend** ([backend/.env](backend/.env)):
-- `POSTGRES_DB`: Database name (default: asset_man)
+
+- `POSTGRES_DB`: Database name (default: asset_management)
 - `POSTGRES_HOST`: Database host (default: postgres)
 - `POSTGRES_USER_FILE`: Path to file containing database username
 - `POSTGRES_PASSWORD_FILE`: Path to file containing database password
 - `JWT_SECRET_KEY`: Secret key for JWT token generation
 - `LIMITED_LOGIN_LIMIT`: Max failed login attempts before lockout (default: 5)
 - `LOGIN_BLOCKED_TIME`: Account lockout duration in minutes (default: 1)
-- `FLASK_ENV`: Environment (production/development)
+- `FLASK_ENV`: Environment (development)
 
 **Frontend**:
+
 - `API_BASE_URL`: Backend API URL (default: http://backend:5000/api)
 - `SECRET_KEY`: Session encryption key
 - `TEMPLATE_PATH`: Path to templates directory (default: /app/templates)
-- `FLASK_ENV`: Environment (production/development)
+- `FLASK_ENV`: Environment (development)
 
 **Docker Compose** (.env in root):
+
 - `BACKEND_JWT_SECRET_KEY`: JWT secret for backend
 - `FRONTEND_APP_SECRET`: Session secret for frontend
 - `POSTGRES_DB`: Database name
@@ -147,6 +153,7 @@ pytest -v tests/
 - `REDIS_PASSWORD`: Redis authentication password
 
 ### Secrets Management
+
 - All sensitive credentials stored in `.secrets/` directory (gitignored)
 - Required secret files:
   - `.secrets/postgres_user.txt` - Database username
@@ -155,6 +162,7 @@ pytest -v tests/
 - Secrets mounted as Docker secrets in containers at `/run/secrets/`
 
 ### Docker Services
+
 - **backend** (`ams-backend`): Flask API on port 5000
 - **frontend** (`ams-frontend`): Web UI on port 3000
 - **postgres** (`ams-postgres`): PostgreSQL database on port 5432
@@ -162,10 +170,12 @@ pytest -v tests/
 - **nginx** (`ams-nginx`): Reverse proxy on ports 8080 (HTTP) and 443 (HTTPS)
 
 ### Health Checks
+
 - Backend: `GET /api/health` (30s interval, 10s timeout, 3 retries, 40s start period)
 - Frontend: `GET /health` (30s interval, 10s timeout, 3 retries, 40s start period)
 
 ### Nginx Configuration
+
 - Configuration: [nginx/nginx.conf](nginx/nginx.conf)
 - SSL certificates: [nginx/ssl/](nginx/ssl/)
 - Logs: [nginx/logs/](nginx/logs/)
@@ -173,17 +183,20 @@ pytest -v tests/
 ## Common Development Tasks
 
 ### Database Operations
+
 - Models are auto-created via `db.create_all()` in [backend/src/app.py](backend/src/app.py) application factory
 - Flask-Migrate integrated for schema migrations
 - **Schema fixes**: If database schema is out of sync with models, run the migration script:
+
   ```bash
   # Apply schema fixes (adds missing columns)
-  docker-compose exec postgres psql -U $(cat .secrets/postgres_user.txt) -d asset_man -f /app/scripts/fix_database_schema.sql
+  docker-compose exec postgres psql -U $(cat .secrets/postgres_user.txt) -d asset_management -f /app/scripts/fix_database_schema.sql
 
   # Or manually add missing columns:
-  docker-compose exec postgres psql -U $(cat .secrets/postgres_user.txt) -d asset_man
+  docker-compose exec postgres psql -U $(cat .secrets/postgres_user.txt) -d asset_management
   # Then run SQL commands from backend/scripts/fix_database_schema.sql
   ```
+
 - Database migrations:
   ```bash
   cd backend
@@ -195,6 +208,7 @@ pytest -v tests/
 - **Default admin user**: username: `admin`, password: `admin123`
 
 ### API Authentication Flow
+
 1. Client sends credentials to `POST /api/auth/login`
 2. Backend validates and returns JWT access token (24h expiration)
 3. Client stores token and includes in subsequent requests via `Authorization: Bearer <token>` header
@@ -203,6 +217,7 @@ pytest -v tests/
 6. Account locked after configurable failed attempts for configurable duration
 
 ### Frontend Authentication Flow
+
 1. User submits login form to `/login` route
 2. Frontend calls backend API via ApiClient
 3. JWT token stored in Flask session
@@ -210,24 +225,28 @@ pytest -v tests/
 5. Protected routes use `@login_required` and `@admin_required` decorators
 
 ### API Authorization
+
 - **Public endpoints**: Login, health check
 - **Authenticated endpoints**: Most read operations, asset operations
 - **Admin-only endpoints**: User management, department management, system configuration
 - Role checks performed via `get_jwt_identity()` and user role validation
 
 ### Hot Reload Development
+
 - Use `docker-compose.reload.yml` overlay for automatic code reloading
 - Backend and frontend source directories mounted as volumes
 - Changes to Python files trigger automatic reload via Gunicorn `--reload` flag
 - Template changes reflected immediately (no restart needed)
 
 ### Debugging
+
 - Use `docker-compose.debug.yml` overlay to enable debugpy
 - Backend debugger: Port 5678
 - Frontend debugger: Port 5679
 - Configure your IDE to attach to remote Python debugger on these ports
 
 ### Log Files
+
 - Backend logs: [backend/logs/backend.log](backend/logs/) (rotating, 10MB max, 10 backups)
 - Frontend logs: [frontend/logs/frontend.log](frontend/logs/) (rotating, 10MB max, 10 backups)
 - Nginx logs: [nginx/logs/](nginx/logs/)
@@ -280,6 +299,7 @@ asset_man/
 ## Testing Strategy
 
 ### Automated Tests
+
 - Framework: Selenium WebDriver with pytest
 - Base test class: [automated_tests/tests/base_test.py](automated_tests/tests/base_test.py)
 - Test files:
@@ -289,6 +309,7 @@ asset_man/
 - Session persistence via cookie.pkl for authenticated tests
 
 ### Test Execution
+
 ```bash
 cd automated_tests
 pytest tests/                    # Run all tests
@@ -300,27 +321,32 @@ pytest --tb=short               # Short traceback
 ## Security Considerations
 
 ### Authentication & Authorization
+
 - Passwords hashed using bcrypt with automatic salt generation
 - JWT tokens for API authentication (24h expiration)
-- Role-based access control (ADMIN, MANAGER)
+- Role-based access control (ADMIN, USER)
 - Failed login attempt tracking with temporary account lockout
 - Session-based authentication in frontend with secure cookies
 
 ### Data Protection
+
 - Database credentials stored in separate secret files
 - Secrets mounted as Docker secrets (not environment variables)
 - CORS enabled for API access control
 - SQL injection protection via SQLAlchemy ORM
 - Input validation on all API endpoints
+- Endpoint with multiple SQL query must be place under Flask app context
 
 ### Network Security
+
 - Nginx reverse proxy for SSL termination
 - Internal Docker network for service communication
 - Only necessary ports exposed to host
 - Health check endpoints for monitoring
 
 # Workflow
-- Use both `docker-compose.yml` and `docker-compose.reload.yml` respectively to start docker containers
+
+- Ensure that the param `-f docker-compose.yml -f docker-compose.reload.yml` be used when operating containers with docker-compose
 - The application is dockerized and running on http://localhost:8080/. Need to use `curl` to access the application.
 - Default admin user and password is "admin" and "admin123". Default manager user and password is "manager" and "manager123". Use those credentials to work with the application.
 - In frontend module, be sure to use ApiClient to make request to backend module, never use bare requests module to make request.
@@ -328,4 +354,4 @@ pytest --tb=short               # Short traceback
 - When the backend docker instance is restarted, the docker log message "INFO in app: Asset Management API startup" is issued and following withs 2 lines of log contains debugger information
 - When the frontend docker instance is restarted, the docker log message "INFO in app: Asset Management Frontend startup" is issued.
 - In order to get correct log message from docker, be sure to clear log before make request, both with frontend and backend containers.
-- In anytime the template *.html file is edited, ensure that the frontend container is restart to load changes.
+- In anytime the template frontend\templates\*\*.html file is edited, ensure that the frontend container is restart to load changes.

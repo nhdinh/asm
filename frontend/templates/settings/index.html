@@ -4,7 +4,12 @@
 
 {% block content %}
 <div class="bg-white rounded-lg shadow p-6 max-w-4xl mx-auto">
-    <h3 class="text-2xl font-bold mb-6">⚙️ Cài Đặt Hệ Thống</h3>
+    <div class="flex justify-between items-center mb-6">
+        <h3 class="text-2xl font-bold">⚙️ Cài Đặt Hệ Thống</h3>
+        <a href="{{ url_for('email_settings') }}" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+            ✉️ Cấu Hình Email
+        </a>
+    </div>
 
     <form method="POST" class="space-y-6">
         <!-- Login Security Settings -->
@@ -160,6 +165,31 @@
                     class="border rounded px-4 py-2 w-full max-w-xs">
                 <p class="text-xs text-gray-500 mt-1">
                     Mặc định: 30 ngày. Sau thời gian này, log sẽ được lưu xuống file .jsonl.
+                </p>
+            </div>
+        </div>
+
+        <!-- Asset Management Settings -->
+        <div class="border rounded-lg p-6 bg-gray-50">
+            <h4 class="text-lg font-semibold mb-4 flex items-center">
+                📦 Quản Lý Tài Sản
+            </h4>
+            <div>
+                <label class="block text-sm font-medium mb-2">
+                    Phòng ban nhận tài sản hư hỏng/thanh lý
+                </label>
+                <select
+                    name="bad_assets_department_id"
+                    required
+                    class="border rounded px-4 py-2 w-full max-w-md">
+                    {% for dept in departments %}
+                    <option value="{{ dept.id }}" {% if settings.get('bad_assets_department_id', {}).get('value', '1') == dept.id|string %}selected{% endif %}>
+                        {{ dept.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-gray-500 mt-1">
+                    Phòng ban này sẽ được chọn mặc định khi tài sản bị hư hỏng hoặc thanh lý.
                 </p>
             </div>
         </div>

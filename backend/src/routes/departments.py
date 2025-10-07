@@ -16,8 +16,9 @@ def get_departments():
     # Get sort parameters
     sort_by, sort_order = get_sort_params()
 
-    # Build base query
-    query = Department.query
+    # Build base query - exclude soft-deleted departments by default
+    include_deleted = request.args.get("include_deleted", "false").lower() == "true"
+    query = Department.query_all(include_deleted=include_deleted)
 
     # Apply search filter
     search = request.args.get('search')
@@ -87,12 +88,8 @@ def create_department():
     db.session.add(dept)
     db.session.flush()  # Get dept.id before commit
 
-    # Add managers (many-to-many relationship)
-    if "manager_ids" in data:
-        for manager_id in data["manager_ids"]:
-            manager = User.query.get(manager_id)
-            if manager and manager not in dept.managers:
-                dept.managers.append(manager)
+    # Note: Managers are automatically determined by users with MANAGER role
+    # who are assigned to this department via user_ids
 
     # Log activity
     activity = UserActivity(
@@ -141,30 +138,30 @@ def update_department(id):
         dept.name = data.get("name", dept.name)
         dept.description = data.get("description", dept.description)
 
-        # Update managers (many-to-many relationship)
-        if "manager_ids" in data:
-            # Clear existing managers
-            dept.managers = []
-
-            # Add new managers
-            for manager_id in data["manager_ids"]:
-                manager = User.query.get(manager_id)
-                if manager and manager not in dept.managers:
-                    dept.managers.append(manager)
+        # Note: Managers are automatically computed from users with MANAGER role
+        # No need to handle manager_ids separately
 
         # Update users (many-to-many relationship)
         if "user_ids" in data:
-            # Clear existing relationships by removing department from all current users
-            current_users = list(dept.users.all())
-            for user in current_users:
-                if dept in user.departments:
-                    user.departments.remove(dept)
+            from models import UserDepartment
 
-            # Add new relationships
+            # Get manager IDs from request
+            manager_ids = data.get("manager_ids", [])
+
+            # Clear all existing associations for this department
+            UserDepartment.query.filter_by(department_id=dept.id).delete()
+
+            # Add new associations with is_manager flag
             for user_id in data["user_ids"]:
                 user = User.query.get(user_id)
-                if user and dept not in user.departments:
-                    user.departments.append(dept)
+                if user:
+                    is_manager = user_id in manager_ids
+                    association = UserDepartment(
+                        user_id=user_id,
+                        department_id=dept.id,
+                        is_manager=is_manager
+                    )
+                    db.session.add(association)
 
         # Log activity
         activity = UserActivity(
@@ -222,7 +219,9 @@ def delete_department(id):
     dept_name = dept.name
     old_values = dept.to_dict()
 
-    db.session.delete(dept)
+    # Soft delete - set deleted_at timestamp
+    from datetime import datetime
+    dept.deleted_at = datetime.utcnow()
 
     # Log activity
     activity = UserActivity(
@@ -231,7 +230,7 @@ def delete_department(id):
         action="delete_department",
         entity_type="department",
         entity_id=id,
-        details=f"Deleted department {dept_name}",
+        details=f"Deleted department {dept_name} (soft delete)",
         status=ActivityStatus.SUCCESS,
     )
     db.session.add(activity)
@@ -245,8 +244,8 @@ def delete_department(id):
         entity_type='department',
         entity_id=id,
         old_values=old_values,
-        new_values={},
-        details=f"Deleted department {dept_name}",
+        new_values={"deleted_at": dept.deleted_at.isoformat()},
+        details=f"Deleted department {dept_name} (soft delete)",
         ip_address=request.remote_addr
     )
 

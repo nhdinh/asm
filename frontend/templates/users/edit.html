@@ -27,24 +27,54 @@
             <div>
                 <label class="block text-sm font-medium mb-1">Vai Trò *</label>
                 <select name="role" required class="border rounded px-3 py-2 w-full">
-                    <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
-                    <option value="manager" {% if user.role == 'manager' %}selected{% endif %}>Manager</option>
-                    <option value="viewer" {% if user.role == 'viewer' %}selected{% endif %}>Viewer</option>
+                    <option value="admin" {% if user.role == 'ADMIN' %}selected{% endif %}>Admin</option>
+                    <option value="user" {% if user.role == 'USER' %}selected{% endif %}>User</option>
                 </select>
             </div>
             <div class="col-span-2">
                 <label class="block text-sm font-medium mb-1">Phòng Ban</label>
-                <div class="border rounded px-3 py-2 max-h-40 overflow-y-auto">
+                <div class="border rounded px-3 py-2 max-h-60 overflow-y-auto bg-gray-50">
                     {% for dept in departments %}
-                    <div class="flex items-center mb-2">
-                        <input type="checkbox" name="department_ids" value="{{ dept.id }}"
-                               id="dept_{{ dept.id }}" class="mr-2"
-                               {% if user.departments and dept.id in (user.departments | map(attribute='id') | list) %}checked{% endif %}>
-                        <label for="dept_{{ dept.id }}" class="cursor-pointer">{{ dept.name }}</label>
+                    {% set is_member = user.departments and dept.id in (user.departments | map(attribute='id') | list) %}
+                    {% set ns = namespace(is_manager=false) %}
+                    {% if is_member %}
+                        {% for user_dept in user.departments %}
+                            {% if user_dept['id'] == dept.id and user_dept.get('is_manager') %}
+                                {% set ns.is_manager = true %}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                    {% set is_manager_of_dept = ns.is_manager %}
+                    <div class="mb-3 p-2 border-b {% if is_member %}bg-blue-50{% endif %} rounded">
+                        <div class="flex items-center mb-1">
+                            <input type="checkbox" name="department_ids" value="{{ dept.id }}"
+                                   id="dept_{{ dept.id }}" class="mr-2 dept-checkbox"
+                                   {% if is_member %}checked{% endif %}
+                                   onchange="toggleManagerCheckbox({{ dept.id }})">
+                            <label for="dept_{{ dept.id }}" class="cursor-pointer font-medium flex-1">
+                                {{ dept.name }}
+                            </label>
+                        </div>
+                        <div class="ml-6 manager-checkbox-container" id="manager_container_{{ dept.id }}"
+                             style="{% if not is_member %}display:none{% endif %}">
+                            <label class="flex items-center cursor-pointer text-sm">
+                                <input type="checkbox" name="manager_department_ids" value="{{ dept.id }}"
+                                       id="manager_{{ dept.id }}" class="mr-2"
+                                       {% if is_manager_of_dept %}checked{% endif %}>
+                                <span class="text-purple-700">
+                                    <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+                                    </svg>
+                                    Quản lý phòng ban này
+                                </span>
+                            </label>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
-                <p class="text-xs text-gray-500 mt-1">Chọn một hoặc nhiều phòng ban</p>
+                <p class="text-xs text-gray-500 mt-1">
+                    <strong>Chọn phòng ban</strong> và đánh dấu <strong class="text-purple-700">Quản lý</strong> nếu người dùng là trưởng phòng
+                </p>
             </div>
         </div>
 
@@ -59,4 +89,19 @@
         </div>
     </form>
 </div>
+
+<script>
+function toggleManagerCheckbox(deptId) {
+    const deptCheckbox = document.getElementById('dept_' + deptId);
+    const managerContainer = document.getElementById('manager_container_' + deptId);
+    const managerCheckbox = document.getElementById('manager_' + deptId);
+
+    if (deptCheckbox.checked) {
+        managerContainer.style.display = 'block';
+    } else {
+        managerContainer.style.display = 'none';
+        managerCheckbox.checked = false; // Uncheck manager if department unchecked
+    }
+}
+</script>
 {% endblock %}

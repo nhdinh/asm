@@ -30,11 +30,11 @@ def asset_report():
 
     query = Asset.query
 
-    # Apply permission filter - managers only see assets from their departments
-    if current_user.role == UserRole.MANAGER:
-        user_dept_ids = [dept.id for dept in current_user.departments]
-        if user_dept_ids:
-            query = query.filter(Asset.department_id.in_(user_dept_ids))
+    # Apply permission filter - managers only see assets from departments they manage
+    if current_user.role == UserRole.USER:
+        managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+        if managed_dept_ids:
+            query = query.filter(Asset.department_id.in_(managed_dept_ids))
 
     # Apply filters
     if department_id:

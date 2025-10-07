@@ -52,6 +52,11 @@ DEFAULT_SETTINGS = {
         "value": "30",
         "description": "Số ngày sau đó hệ thống sẽ lưu audit log xuống file",
         "data_type": "int"
+    },
+    "bad_assets_department_id": {
+        "value": "1",
+        "description": "Phòng ban nhận tài sản hư hỏng/thanh lý (ID phòng ban)",
+        "data_type": "int"
     }
 }
 

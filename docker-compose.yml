@@ -7,6 +7,8 @@ secrets:
     file: ./.secrets/postgres_password.txt
   redis_password:
     file: ./.secrets/redis_password.txt
+  smtp_password:
+    file: ./.secrets/smtp_password.txt
 
 services:
   # Backend API Service
@@ -129,6 +131,50 @@ services:
     restart: unless-stopped
     networks:
       - asset-network
+
+  # Email Worker - Background service for sending emails
+  email_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ams-email-worker
+    secrets:
+      - postgres_user
+      - postgres_password
+      - redis_password
+    volumes:
+      - ./backend/logs:/app/logs
+      - ./backend/src:/app/src
+      - ./backend/.env:/app/.env
+    environment:
+      FLASK_ENV: production
+      JWT_SECRET_KEY: ${BACKEND_JWT_SECRET_KEY}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      EMAIL_WORKER_POLL_INTERVAL: 5
+      EMAIL_WORKER_BATCH_SIZE: 10
+    command: python src/email_worker.py
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - asset-network
+
+  # Mailhog - Email testing tool (no internet required)
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: ams-mailhog
+    ports:
+      - "1025:1025"  # SMTP server
+      - "8025:8025"  # Web UI
+    networks:
+      - asset-network
+    restart: unless-stopped
 
 networks:
   asset-network:

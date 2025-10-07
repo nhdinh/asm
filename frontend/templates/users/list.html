@@ -42,8 +42,7 @@
                 <select name="role" onchange="document.getElementById('filterForm').submit()" class="border rounded px-3 py-2 w-full text-sm">
                     <option value="">Tất cả</option>
                     <option value="admin" {% if filters.role == 'admin' %}selected{% endif %}>Admin</option>
-                    <option value="manager" {% if filters.role == 'manager' %}selected{% endif %}>Manager</option>
-                    <option value="viewer" {% if filters.role == 'viewer' %}selected{% endif %}>Viewer</option>
+                    <option value="user" {% if filters.role == 'user' %}selected{% endif %}>User</option>
                 </select>
             </div>
             <div>
@@ -116,9 +115,32 @@
         <tbody>
             {% for user in users %}
             <tr class="border-b hover:bg-gray-50">
-                <td class="px-4 py-3">{{ user.username }}</td>
-                <td class="px-4 py-3">{{ user.email or '-' }}</td>
-                <td class="px-4 py-3">{{ user.fullname or '-' }}</td>
+                <td class="px-4 py-3">
+                    <a href="{{ url_for('user_detail', id=user.id) }}"
+                       class="text-blue-600 hover:text-blue-800 font-medium hover:underline">
+                        {{ user.username }}
+                    </a>
+                </td>
+                <td class="px-4 py-3">
+                    {% if user.email %}
+                        <a href="{{ url_for('user_detail', id=user.id) }}"
+                           class="text-blue-600 hover:text-blue-800 hover:underline">
+                            {{ user.email }}
+                        </a>
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3">
+                    {% if user.fullname %}
+                        <a href="{{ url_for('user_detail', id=user.id) }}"
+                           class="text-blue-600 hover:text-blue-800 hover:underline">
+                            {{ user.fullname }}
+                        </a>
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
                 <td class="px-4 py-3">
                     {% if user.departments %}
                         {% for dept in user.departments %}
@@ -129,7 +151,7 @@
                     {% endif %}
                 </td>
                 <td class="px-4 py-3">
-                    <span class="px-2 py-1 rounded text-xs {% if user.role == 'admin' %}bg-red-100 text-red-800{% elif user.role == 'manager' %}bg-blue-100 text-blue-800{% else %}bg-gray-100 text-gray-800{% endif %}">
+                    <span class="px-2 py-1 rounded text-xs {% if user.role == 'admin' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}">
                         {{ user.role|upper }}
                     </span>
                 </td>
@@ -164,22 +186,12 @@ function editUser(userId) {
 
 function deleteUser(userId) {
     if (confirm('Bạn có chắc chắn muốn xóa người dùng này?')) {
-        fetch('/api/users/' + userId, {
-            method: 'DELETE'
-        })
-        .then(response => {
-            if (response.ok) {
-                alert('Xóa người dùng thành công!');
-                location.reload();
-            } else {
-                return response.json().then(data => {
-                    throw new Error(data.message || 'Không thể xóa người dùng');
-                });
-            }
-        })
-        .catch(error => {
-            alert('Lỗi: ' + error.message);
-        });
+        // Create a form and submit it
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/users/' + userId + '/delete';
+        document.body.appendChild(form);
+        form.submit();
     }
 }
 
@@ -223,7 +235,8 @@ function showUploadModal() {
 
         fetch('/users/upload-csv', {
             method: 'POST',
-            body: formData
+            body: formData,
+            credentials: 'same-origin'
         })
         .then(response => {
             if (!response.ok) {

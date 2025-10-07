@@ -1,6 +1,16 @@
 from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, Asset, AssetStatus, AssetTransfer, User, UserRole, UserActivity, ActivityStatus
+from models import (
+    db,
+    Asset,
+    AssetStatus,
+    AssetTransfer,
+    User,
+    UserRole,
+    UserActivity,
+    ActivityStatus,
+    SystemSetting,
+)
 from datetime import datetime
 from audit_logger import audit_logger
 from pagination import paginate_query, create_pagination_response, get_sort_params
@@ -24,23 +34,35 @@ def get_assets():
     current_user_id = get_jwt_identity()
     current_user = User.query.get(current_user_id)
 
-    # Viewers should use /api/my-assets endpoint
-    if current_user.role == UserRole.VIEWER:
-        return jsonify({"message": "Viewers should use /api/my-assets endpoint"}), 403
+    # Regular users (non-managers, non-admins) should use /api/my-assets endpoint
+    if current_user.role == UserRole.USER:
+        # Check if user is a manager of any department
+        is_manager = any(assoc.is_manager for assoc in current_user.department_associations)
+        if not is_manager:
+            return jsonify({"message": "Regular users should use /api/my-assets endpoint"}), 403
 
-    query = Asset.query
+    # Build base query - exclude soft-deleted assets by default
+    include_deleted = request.args.get("include_deleted", "false").lower() == "true"
+    query = Asset.query_all(include_deleted=include_deleted)
 
-    # Filter by department for managers - only show assets from their departments
-    if current_user.role == UserRole.MANAGER:
-        user_dept_ids = [dept.id for dept in current_user.departments]
-        if user_dept_ids:
-            query = query.filter(Asset.department_id.in_(user_dept_ids))
+    # Filter by department for non-admin users - only show assets from departments they manage
+    if current_user.role == UserRole.USER:
+        # Get departments where user is manager
+        managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+        if managed_dept_ids:
+            query = query.filter(Asset.department_id.in_(managed_dept_ids))
 
     # Apply filters
     department_id = request.args.get("department_id")
     status = request.args.get("status")
     category = request.args.get("category")
     search = request.args.get("search")
+    assigned_to_id = request.args.get("assigned_to_id")
+    show_inactive = request.args.get("show_inactive", "false").lower() == "true"
+
+    # Hide inactive assets by default (unless show_inactive=true)
+    if not show_inactive:
+        query = query.filter(Asset.status == AssetStatus.ACTIVE)
 
     if department_id:
         query = query.filter_by(department_id=department_id)
@@ -48,6 +70,8 @@ def get_assets():
         query = query.filter_by(status=AssetStatus[status.upper()])
     if category:
         query = query.filter_by(category=category)
+    if assigned_to_id:
+        query = query.filter_by(assigned_to_id=assigned_to_id)
     if search:
         # Search in code, name, description
         search_filter = f"%{search}%"
@@ -55,7 +79,7 @@ def get_assets():
             db.or_(
                 Asset.code.ilike(search_filter),
                 Asset.name.ilike(search_filter),
-                Asset.description.ilike(search_filter)
+                Asset.description.ilike(search_filter),
             )
         )
 
@@ -64,18 +88,18 @@ def get_assets():
 
     # Apply sorting
     valid_sort_fields = {
-        'code': Asset.code,
-        'name': Asset.name,
-        'category': Asset.category,
-        'purchase_value': Asset.purchase_value,
-        'purchase_date': Asset.purchase_date,
-        'status': Asset.status,
-        'created_at': Asset.created_at
+        "code": Asset.code,
+        "name": Asset.name,
+        "category": Asset.category,
+        "purchase_value": Asset.purchase_value,
+        "purchase_date": Asset.purchase_date,
+        "status": Asset.status,
+        "created_at": Asset.created_at,
     }
 
     if sort_by in valid_sort_fields:
         sort_column = valid_sort_fields[sort_by]
-        if sort_order == 'desc':
+        if sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
@@ -94,17 +118,27 @@ def create_asset():
     current_user_id = get_jwt_identity()
     current_user = User.query.get(current_user_id)
 
-    # Viewers cannot create assets
-    if current_user.role == UserRole.VIEWER:
-        return jsonify({"message": "Unauthorized - viewers cannot create assets"}), 403
+    # Regular users (non-managers) cannot create assets
+    if current_user.role == UserRole.USER:
+        # Check if user is a manager of any department
+        is_manager = any(assoc.is_manager for assoc in current_user.department_associations)
+        if not is_manager:
+            return jsonify({"message": "Unauthorized - regular users cannot create assets"}), 403
 
     data = request.json
 
-    # Check permissions - Manager can only create assets for their departments
-    if current_user.role == UserRole.MANAGER:
-        user_dept_ids = [dept.id for dept in current_user.departments]
-        if data.get("department_id") not in user_dept_ids:
-            return jsonify({"message": "Unauthorized - can only create assets for your departments"}), 403
+    # Check permissions - Managers can only create assets for departments they manage
+    if current_user.role == UserRole.USER:
+        managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+        if data.get("department_id") not in managed_dept_ids:
+            return (
+                jsonify(
+                    {
+                        "message": "Unauthorized - can only create assets for departments you manage"
+                    }
+                ),
+                403,
+            )
 
     if Asset.query.filter_by(code=data["code"]).first():
         return jsonify({"message": "Asset code already exists"}), 400
@@ -117,19 +151,27 @@ def create_asset():
 
         user_dept_ids = [dept.id for dept in assigned_user.departments]
         if data["department_id"] not in user_dept_ids:
-            return jsonify({"message": "Cannot assign asset to user - user does not belong to the asset's department"}), 400
+            return (
+                jsonify(
+                    {
+                        "message": "Cannot assign asset to user - user does not belong to the asset's department"
+                    }
+                ),
+                400,
+            )
 
     # Handle category - find or create
     category_id = None
     category_name = data.get("category")
     if category_name:
         from models import AssetCategory
+
         category = AssetCategory.query.filter_by(name=category_name).first()
         if not category:
             # Create new category automatically
             category = AssetCategory(
                 name=category_name,
-                description=f"Auto-created when adding asset {data['code']}"
+                description=f"Auto-created when adding asset {data['code']}",
             )
             db.session.add(category)
             db.session.flush()  # Get the ID
@@ -163,7 +205,7 @@ def create_asset():
             to_department_id=data["department_id"],
             assigned_to_id=data["assigned_to_id"],
             transferred_by=current_user_id,
-            notes=f"Bàn giao tài sản lần đầu tiên"
+            notes=f"Bàn giao tài sản lần đầu tiên",
         )
         db.session.add(transfer)
 
@@ -184,12 +226,12 @@ def create_asset():
     audit_logger.log(
         user_id=current_user_id,
         username=current_user.username,
-        action='create',
-        entity_type='asset',
+        action="create",
+        entity_type="asset",
         entity_id=asset.id,
         new_values=asset.to_dict(),
         details=f"Created asset {asset.code}",
-        ip_address=request.remote_addr
+        ip_address=request.remote_addr,
     )
 
     return jsonify(asset.to_dict()), 201
@@ -203,7 +245,10 @@ def update_asset(id):
 
     # Only admins can edit assets
     if current_user.role != UserRole.ADMIN:
-        return jsonify({"message": "Unauthorized - only administrators can edit assets"}), 403
+        return (
+            jsonify({"message": "Unauthorized - only administrators can edit assets"}),
+            403,
+        )
 
     asset = Asset.query.get_or_404(id)
 
@@ -220,12 +265,13 @@ def update_asset(id):
         category_name = data.get("category")
         if category_name:
             from models import AssetCategory
+
             category = AssetCategory.query.filter_by(name=category_name).first()
             if not category:
                 # Create new category automatically
                 category = AssetCategory(
                     name=category_name,
-                    description=f"Auto-created when updating asset {asset.code}"
+                    description=f"Auto-created when updating asset {asset.code}",
                 )
                 db.session.add(category)
                 db.session.flush()  # Get the ID
@@ -258,7 +304,14 @@ def update_asset(id):
 
             user_dept_ids = [dept.id for dept in assigned_user.departments]
             if asset.department_id not in user_dept_ids:
-                return jsonify({"message": "Cannot assign asset to user - user does not belong to the asset's department"}), 400
+                return (
+                    jsonify(
+                        {
+                            "message": "Cannot assign asset to user - user does not belong to the asset's department"
+                        }
+                    ),
+                    400,
+                )
 
         asset.assigned_to_id = new_assigned_to
 
@@ -269,7 +322,7 @@ def update_asset(id):
                 to_department_id=asset.department_id,
                 assigned_to_id=new_assigned_to,
                 transferred_by=current_user_id,
-                notes=f"Bàn giao tài sản {'lần đầu tiên' if old_assigned_to is None else 'cho người dùng mới'}"
+                notes=f"Bàn giao tài sản {'lần đầu tiên' if old_assigned_to is None else 'cho người dùng mới'}",
             )
             db.session.add(transfer)
 
@@ -293,13 +346,13 @@ def update_asset(id):
     audit_logger.log(
         user_id=current_user_id,
         username=current_user.username,
-        action='update',
-        entity_type='asset',
+        action="update",
+        entity_type="asset",
         entity_id=asset.id,
         old_values=old_values,
         new_values=asset.to_dict(),
         details=f"Updated asset {asset.code}",
-        ip_address=request.remote_addr
+        ip_address=request.remote_addr,
     )
 
     return jsonify(asset.to_dict())
@@ -311,29 +364,51 @@ def transfer_asset(id):
     current_user_id = get_jwt_identity()
     current_user = User.query.get(current_user_id)
 
-    # Viewers cannot transfer assets
-    if current_user.role == UserRole.VIEWER:
-        return jsonify({"message": "Unauthorized - viewers cannot transfer assets"}), 403
+    # Regular users (non-managers) cannot transfer assets
+    if current_user.role == UserRole.USER:
+        is_manager = any(assoc.is_manager for assoc in current_user.department_associations)
+        if not is_manager:
+            return (
+                jsonify({"message": "Unauthorized - regular users cannot transfer assets"}),
+                403,
+            )
 
     asset = Asset.query.get_or_404(id)
     data = request.json
 
     # Check permissions
-    if current_user.role == UserRole.MANAGER:
-        # Manager can only reassign assets within their own department
+    if current_user.role == UserRole.USER:
+        # Managers can only reassign assets within departments they manage
         # They CANNOT transfer assets to other departments
-        user_dept_ids = [dept.id for dept in current_user.departments]
+        managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
 
-        if asset.department_id not in user_dept_ids:
-            return jsonify({"message": "Unauthorized - asset is not in your department"}), 403
+        if asset.department_id not in managed_dept_ids:
+            return (
+                jsonify({"message": "Unauthorized - asset is not in a department you manage"}),
+                403,
+            )
 
-        # Manager cannot change department - can only reassign to users within same department
+        # Managers cannot change department - can only reassign to users within same department
         if data["to_department_id"] != asset.department_id:
-            return jsonify({"message": "Managers cannot transfer assets to other departments. Only reassignment within your department is allowed."}), 403
+            return (
+                jsonify(
+                    {
+                        "message": "Managers cannot transfer assets to other departments. Only reassignment within your department is allowed."
+                    }
+                ),
+                403,
+            )
 
     # Require assigned_to_id when transferring
     if not data.get("assigned_to_id"):
-        return jsonify({"message": "assigned_to_id is required - asset must be assigned to a specific user"}), 400
+        return (
+            jsonify(
+                {
+                    "message": "assigned_to_id is required - asset must be assigned to a specific user"
+                }
+            ),
+            400,
+        )
 
     # Validate that assigned user belongs to the target department
     assigned_user = User.query.get(data["assigned_to_id"])
@@ -342,7 +417,14 @@ def transfer_asset(id):
 
     user_dept_ids = [dept.id for dept in assigned_user.departments]
     if data["to_department_id"] not in user_dept_ids:
-        return jsonify({"message": "Cannot assign asset to user - user does not belong to the target department"}), 400
+        return (
+            jsonify(
+                {
+                    "message": "Cannot assign asset to user - user does not belong to the target department"
+                }
+            ),
+            400,
+        )
 
     # Create transfer record
     transfer = AssetTransfer(
@@ -380,13 +462,16 @@ def transfer_asset(id):
     audit_logger.log(
         user_id=current_user_id,
         username=current_user.username,
-        action='transfer',
-        entity_type='asset',
+        action="transfer",
+        entity_type="asset",
         entity_id=asset.id,
-        old_values={'department_id': transfer.from_department_id},
-        new_values={'department_id': transfer.to_department_id, 'transfer_id': transfer.id},
+        old_values={"department_id": transfer.from_department_id},
+        new_values={
+            "department_id": transfer.to_department_id,
+            "transfer_id": transfer.id,
+        },
         details=f"Transferred asset {asset.code} from dept {transfer.from_department_id} to {transfer.to_department_id}",
-        ip_address=request.remote_addr
+        ip_address=request.remote_addr,
     )
 
     return jsonify(transfer.to_dict()), 201
@@ -402,7 +487,10 @@ def get_asset(id):
 
     # Check permissions
     if not user_has_access_to_department(current_user, asset.department_id):
-        return jsonify({"message": "Unauthorized - no access to this asset's department"}), 403
+        return (
+            jsonify({"message": "Unauthorized - no access to this asset's department"}),
+            403,
+        )
 
     return jsonify(asset.to_dict())
 
@@ -415,14 +503,21 @@ def delete_asset(id):
 
     # Only admins can delete assets
     if current_user.role != UserRole.ADMIN:
-        return jsonify({"message": "Unauthorized - only administrators can delete assets"}), 403
+        return (
+            jsonify(
+                {"message": "Unauthorized - only administrators can delete assets"}
+            ),
+            403,
+        )
 
     asset = Asset.query.get_or_404(id)
 
     asset_code = asset.code
     old_values = asset.to_dict()
 
-    db.session.delete(asset)
+    # Soft delete - set deleted_at timestamp
+    from datetime import datetime
+    asset.deleted_at = datetime.utcnow()
 
     # Log activity
     activity = UserActivity(
@@ -431,7 +526,7 @@ def delete_asset(id):
         action="delete_asset",
         entity_type="asset",
         entity_id=id,
-        details=f"Deleted asset {asset_code}",
+        details=f"Deleted asset {asset_code} (soft delete)",
         status=ActivityStatus.SUCCESS,
     )
     db.session.add(activity)
@@ -441,13 +536,13 @@ def delete_asset(id):
     audit_logger.log(
         user_id=current_user_id,
         username=current_user.username,
-        action='delete',
-        entity_type='asset',
+        action="delete",
+        entity_type="asset",
         entity_id=id,
         old_values=old_values,
-        new_values={},
-        details=f"Deleted asset {asset_code}",
-        ip_address=request.remote_addr
+        new_values={"deleted_at": asset.deleted_at.isoformat()},
+        details=f"Deleted asset {asset_code} (soft delete)",
+        ip_address=request.remote_addr,
     )
 
     return "", 204
@@ -475,18 +570,57 @@ def download_sample_csv():
     writer = csv.writer(output)
 
     # Write header
-    writer.writerow(['code', 'name', 'description', 'category', 'purchase_value', 'purchase_date', 'department_id', 'assigned_to_id', 'status', 'condition_notes'])
+    writer.writerow(
+        [
+            "code",
+            "name",
+            "description",
+            "category",
+            "purchase_value",
+            "purchase_date",
+            "department_id",
+            "assigned_to_id",
+            "status",
+            "condition_notes",
+        ]
+    )
 
     # Write sample rows
-    writer.writerow(['LAPTOP-001', 'Dell Latitude 5420', 'Business laptop with i5 processor', 'Laptop', '25000000', '2024-01-15', '1', '3', 'active', 'Good condition'])
-    writer.writerow(['DESK-001', 'Standing Desk', 'Adjustable height desk', 'Furniture', '5000000', '2024-02-20', '2', '4', 'active', ''])
+    writer.writerow(
+        [
+            "LAPTOP-001",
+            "Dell Latitude 5420",
+            "Business laptop with i5 processor",
+            "Laptop",
+            "25000000",
+            "2024-01-15",
+            "1",
+            "3",
+            "active",
+            "Good condition",
+        ]
+    )
+    writer.writerow(
+        [
+            "DESK-001",
+            "Standing Desk",
+            "Adjustable height desk",
+            "Furniture",
+            "5000000",
+            "2024-02-20",
+            "2",
+            "4",
+            "active",
+            "",
+        ]
+    )
 
     # Create response
     output.seek(0)
     return Response(
         output.getvalue(),
-        mimetype='text/csv',
-        headers={'Content-Disposition': 'attachment; filename=assets_sample.csv'}
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=assets_sample.csv"},
     )
 
 
@@ -499,15 +633,15 @@ def upload_assets_csv():
     if current_user.role != UserRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
-    if 'file' not in request.files:
+    if "file" not in request.files:
         return jsonify({"message": "No file provided"}), 400
 
-    file = request.files['file']
+    file = request.files["file"]
 
-    if file.filename == '':
+    if file.filename == "":
         return jsonify({"message": "No file selected"}), 400
 
-    if not file.filename.endswith('.csv'):
+    if not file.filename.endswith(".csv"):
         return jsonify({"message": "File must be a CSV"}), 400
 
     try:
@@ -518,70 +652,95 @@ def upload_assets_csv():
         created_assets = []
         errors = []
 
-        for row_num, row in enumerate(csv_reader, start=2):  # start=2 because row 1 is header
+        for row_num, row in enumerate(
+            csv_reader, start=2
+        ):  # start=2 because row 1 is header
             try:
                 # Validate required fields
-                if not row.get('code') or not row.get('name') or not row.get('department_id'):
-                    errors.append(f"Row {row_num}: Missing required fields (code, name, department_id)")
+                if (
+                    not row.get("code")
+                    or not row.get("name")
+                    or not row.get("department_id")
+                ):
+                    errors.append(
+                        f"Row {row_num}: Missing required fields (code, name, department_id)"
+                    )
                     continue
 
                 # Check if asset already exists
-                if Asset.query.filter_by(code=row['code']).first():
-                    errors.append(f"Row {row_num}: Asset code '{row['code']}' already exists")
+                if Asset.query.filter_by(code=row["code"]).first():
+                    errors.append(
+                        f"Row {row_num}: Asset code '{row['code']}' already exists"
+                    )
                     continue
 
                 # Parse status
-                status_str = row.get('status', 'active').lower()
-                if status_str == 'damaged':
+                status_str = row.get("status", "active").lower()
+                if status_str == "damaged":
                     status = AssetStatus.DAMAGED
-                elif status_str == 'disposed':
+                elif status_str == "disposed":
                     status = AssetStatus.DISPOSED
                 else:
                     status = AssetStatus.ACTIVE
 
                 # Parse purchase_date
                 purchase_date = None
-                if row.get('purchase_date'):
+                if row.get("purchase_date"):
                     try:
-                        purchase_date = datetime.strptime(row['purchase_date'], "%Y-%m-%d").date()
+                        purchase_date = datetime.strptime(
+                            row["purchase_date"], "%Y-%m-%d"
+                        ).date()
                     except ValueError:
-                        errors.append(f"Row {row_num}: Invalid purchase_date format (use YYYY-MM-DD)")
+                        errors.append(
+                            f"Row {row_num}: Invalid purchase_date format (use YYYY-MM-DD)"
+                        )
                         continue
 
                 # Validate department exists
-                department_id = int(row['department_id'])
+                department_id = int(row["department_id"])
                 from models import Department
+
                 if not Department.query.get(department_id):
-                    errors.append(f"Row {row_num}: Department ID {department_id} not found")
+                    errors.append(
+                        f"Row {row_num}: Department ID {department_id} not found"
+                    )
                     continue
 
                 # Validate assigned_to_id if provided
                 assigned_to_id = None
-                if row.get('assigned_to_id'):
-                    assigned_to_id = int(row['assigned_to_id'])
+                if row.get("assigned_to_id"):
+                    assigned_to_id = int(row["assigned_to_id"])
                     assigned_user = User.query.get(assigned_to_id)
                     if not assigned_user:
-                        errors.append(f"Row {row_num}: User ID {assigned_to_id} not found")
+                        errors.append(
+                            f"Row {row_num}: User ID {assigned_to_id} not found"
+                        )
                         continue
 
                     # Validate user belongs to department
                     user_dept_ids = [dept.id for dept in assigned_user.departments]
                     if department_id not in user_dept_ids:
-                        errors.append(f"Row {row_num}: User {assigned_to_id} does not belong to department {department_id}")
+                        errors.append(
+                            f"Row {row_num}: User {assigned_to_id} does not belong to department {department_id}"
+                        )
                         continue
 
                 # Create asset
                 asset = Asset(
-                    code=row['code'],
-                    name=row['name'],
-                    description=row.get('description'),
-                    category=row.get('category'),
-                    purchase_value=float(row['purchase_value']) if row.get('purchase_value') else None,
+                    code=row["code"],
+                    name=row["name"],
+                    description=row.get("description"),
+                    category=row.get("category"),
+                    purchase_value=(
+                        float(row["purchase_value"])
+                        if row.get("purchase_value")
+                        else None
+                    ),
                     purchase_date=purchase_date,
                     department_id=department_id,
                     assigned_to_id=assigned_to_id,
                     status=status,
-                    condition_notes=row.get('condition_notes')
+                    condition_notes=row.get("condition_notes"),
                 )
 
                 db.session.add(asset)
@@ -594,7 +753,7 @@ def upload_assets_csv():
                         to_department_id=department_id,
                         assigned_to_id=assigned_to_id,
                         transferred_by=current_user_id,
-                        notes=f"Initial assignment via CSV upload"
+                        notes=f"Initial assignment via CSV upload",
                     )
                     db.session.add(transfer)
 
@@ -621,13 +780,207 @@ def upload_assets_csv():
         if created_assets:
             db.session.commit()
 
-        return jsonify({
-            "message": f"CSV processed successfully",
-            "created": len(created_assets),
-            "created_assets": created_assets,
-            "errors": errors
-        }), 200 if not errors else 207  # 207 = Multi-Status
+        return jsonify(
+            {
+                "message": f"CSV processed successfully",
+                "created": len(created_assets),
+                "created_assets": created_assets,
+                "errors": errors,
+            }
+        ), (
+            200 if not errors else 207
+        )  # 207 = Multi-Status
 
     except Exception as e:
         db.session.rollback()
         return jsonify({"message": f"Error processing CSV: {str(e)}"}), 400
+
+
+@asset_bp.route("/<int:id>/mark-inactive", methods=["POST"])
+@jwt_required()
+def mark_asset_inactive(id):
+    """
+    Mark asset as damaged or disposed and transfer to bad assets department.
+    Only admins and managers can perform this action.
+    """
+    current_user_id = get_jwt_identity()
+    current_user = User.query.get(current_user_id)
+
+    # Regular users (non-managers) cannot mark assets as inactive
+    if current_user.role == UserRole.USER:
+        is_manager = any(assoc.is_manager for assoc in current_user.department_associations)
+        if not is_manager:
+            return (
+                jsonify(
+                    {"message": "Unauthorized - regular users cannot mark assets as inactive"}
+                ),
+                403,
+            )
+
+    asset = Asset.query.get_or_404(id)
+    data = request.json
+
+    # Get the new status from request
+    new_status = data.get("status", "damaged")  # Default to damaged
+    if new_status not in ["damaged", "disposed"]:
+        return (
+            jsonify({"message": "Invalid status. Must be 'damaged' or 'disposed'"}),
+            400,
+        )
+
+    # Check permissions for managers
+    if current_user.role == UserRole.USER:
+        managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+        if asset.department_id not in managed_dept_ids:
+            return (
+                jsonify({"message": "Unauthorized - asset is not in a department you manage"}),
+                403,
+            )
+
+    # Get bad assets department from system settings
+    bad_dept_setting = SystemSetting.query.filter_by(
+        key="bad_assets_department_id"
+    ).first()
+    if not bad_dept_setting:
+        return (
+            jsonify(
+                {"message": "Bad assets department not configured in system settings"}
+            ),
+            500,
+        )
+
+    try:
+        bad_dept_id = int(bad_dept_setting.value)
+    except (ValueError, TypeError):
+        return (
+            jsonify({"message": "Invalid bad assets department ID in system settings"}),
+            500,
+        )
+
+    # Store old values for audit
+    old_status = asset.status.value
+    old_department_id = asset.department_id
+    old_assigned_to_id = asset.assigned_to_id
+
+    # Update asset status
+    asset.status = AssetStatus[new_status.upper()]
+
+    # Only transfer if not already in bad assets department
+    if asset.department_id != bad_dept_id:
+        # Create transfer record
+        transfer = AssetTransfer(
+            asset_id=asset.id,
+            from_department_id=asset.department_id,
+            to_department_id=bad_dept_id,
+            assigned_to_id=None,  # Unassign from user
+            transferred_by=current_user_id,
+            notes=data.get(
+                "notes",
+                f"Asset marked as {new_status} and transferred to bad assets department",
+            ),
+        )
+        db.session.add(transfer)
+
+        # Update asset department
+        asset.department_id = bad_dept_id
+
+    # Unassign from user
+    asset.assigned_to_id = None
+    asset.condition_notes = data.get("condition_notes", asset.condition_notes)
+
+    # Log activity
+    activity = UserActivity(
+        user_id=current_user_id,
+        username=current_user.username,
+        action=f"mark_asset_{new_status}",
+        entity_type="asset",
+        entity_id=asset.id,
+        details=f"Marked asset {asset.code} as {new_status}",
+        status=ActivityStatus.SUCCESS,
+    )
+    db.session.add(activity)
+
+    db.session.commit()
+
+    # Audit log
+    audit_logger.log(
+        user_id=current_user_id,
+        username=current_user.username,
+        action="update",
+        entity_type="asset",
+        entity_id=asset.id,
+        old_values={
+            "status": old_status,
+            "department_id": old_department_id,
+            "assigned_to_id": old_assigned_to_id,
+        },
+        new_values={
+            "status": new_status,
+            "department_id": asset.department_id,
+            "assigned_to_id": None,
+        },
+        details=f"Marked asset {asset.code} as {new_status} and transferred to bad assets department",
+        ip_address=request.remote_addr,
+    )
+
+    return (
+        jsonify(
+            {
+                "message": f"Asset marked as {new_status} and transferred successfully",
+                "asset": asset.to_dict(),
+            }
+        ),
+        200,
+    )
+
+
+@asset_bp.route("/<int:id>/propose-liquidation", methods=["POST"])
+@jwt_required()
+def propose_asset_for_liquidation(id):
+    """Propose or unpropose an asset for liquidation (admin and department managers only)"""
+    current_user_id = get_jwt_identity()
+    current_user = User.query.get(current_user_id)
+
+    asset = Asset.query.get_or_404(id)
+
+    # Authorization: Admin or manager of the asset's department
+    if current_user.role != UserRole.ADMIN:
+        # Check if user is manager of asset's department
+        is_manager_of_dept = any(
+            assoc.department_id == asset.department_id and assoc.is_manager
+            for assoc in current_user.department_associations
+        )
+        if not is_manager_of_dept:
+            return (
+                jsonify({
+                    "message": "Unauthorized - only admins or department managers can propose assets for liquidation"
+                }),
+                403,
+            )
+
+    data = request.json
+    propose = data.get("propose_for_liquidation", True)
+
+    # Capture old value for audit
+    old_value = asset.propose_for_liquidation
+
+    # Update the flag
+    asset.propose_for_liquidation = propose
+    db.session.commit()
+
+    # Log the activity
+    action = "propose_asset_for_liquidation" if propose else "unpropose_asset_for_liquidation"
+    audit_logger.log(
+        user_id=current_user.id,
+        username=current_user.username,
+        action=action,
+        entity_type="asset",
+        entity_id=asset.id,
+        old_values={"propose_for_liquidation": old_value},
+        new_values={"propose_for_liquidation": propose},
+        details=f"Asset {asset.code} {'proposed' if propose else 'unproposed'} for liquidation",
+        ip_address=request.remote_addr,
+    )
+
+    message = f"Asset {asset.code} proposed for liquidation" if propose else f"Asset {asset.code} removed from liquidation proposal"
+    return jsonify({"message": message, "asset": asset.to_dict()}), 200

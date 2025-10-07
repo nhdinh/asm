@@ -1,3 +1,4 @@
+from enum import StrEnum
 from app import create_app
 from flask import (
     render_template,
@@ -16,7 +17,12 @@ import io
 import csv
 import requests
 from api_client import ApiClient
-import traceback
+
+
+class UserRole(StrEnum):
+    ADMIN = "ADMIN"
+    USER = "USER"
+
 
 app = create_app()
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:5000")
@@ -32,8 +38,8 @@ def get_api_client():
 
 def extract_items(response):
     """Extract items from paginated response, or return response as-is if not paginated"""
-    if isinstance(response, dict) and 'items' in response:
-        return response['items']
+    if isinstance(response, dict) and "items" in response:
+        return response["items"]
     return response if response else []
 
 
@@ -45,7 +51,7 @@ def login_required(f):
             return redirect(url_for("login"))
 
         # Check if user must change password (except on first_password_change and logout routes)
-        if f.__name__ not in ['first_password_change', 'logout']:
+        if f.__name__ not in ["first_password_change", "logout"]:
             user = session.get("user", {})
             if user.get("must_change_password"):
                 return redirect(url_for("first_password_change"))
@@ -58,7 +64,7 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if "user" not in session or session["user"].get("role") != "admin":
+        if "user" not in session or session["user"].get("role") != UserRole.ADMIN:
             flash("Bạn không có quyền truy cập chức năng này.", "danger")
             return redirect(url_for("dashboard"))
         return f(*args, **kwargs)
@@ -67,12 +73,10 @@ def admin_required(f):
 
 
 def non_viewer_required(f):
-    """Decorator to block viewer role from accessing certain features"""
+    """Decorator for backward compatibility - no longer blocks any users"""
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if "user" not in session or session["user"].get("role") == "viewer":
-            flash("Chức năng này không khả dụng cho tài khoản Viewer.", "warning")
-            return redirect(url_for("my_assets"))
         return f(*args, **kwargs)
 
     return decorated_function
@@ -80,6 +84,11 @@ def non_viewer_required(f):
 
 def get_headers():
     access_token = session.get("access_token")
+    if not access_token:
+        app.logger.warning(
+            f"No access_token in session. Session keys: {list(session.keys())}"
+        )
+        return {}
     return {"Authorization": f"Bearer {access_token}"}
 
 
@@ -152,10 +161,6 @@ def login():
                 next_page = request.args.get("next")
                 if next_page:
                     return redirect(next_page)
-
-                # Redirect viewers to my-assets page
-                if session["user"].get("role") == "viewer":
-                    return redirect(url_for("my_assets"))
 
                 return redirect(url_for("dashboard"))
             else:
@@ -261,8 +266,8 @@ def profile():
         settings = client.get_settings()
         default_items_per_page = None
         for setting in settings:
-            if setting.get('key') == 'default_items_per_page':
-                default_items_per_page = int(setting.get('value', 20))
+            if setting.get("key") == "default_items_per_page":
+                default_items_per_page = int(setting.get("value", 20))
                 break
         if default_items_per_page is None:
             default_items_per_page = 20
@@ -270,7 +275,9 @@ def profile():
         app.logger.exception(e)
         default_items_per_page = 20
 
-    return render_template("users/profile.html", user=user, default_items_per_page=default_items_per_page)
+    return render_template(
+        "users/profile.html", user=user, default_items_per_page=default_items_per_page
+    )
 
 
 @app.route("/change-password", methods=["POST"])
@@ -305,10 +312,6 @@ def change_password():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    # Redirect viewers to their my-assets page
-    if session.get("user", {}).get("role") == "viewer":
-        return redirect(url_for("my_assets"))
-
     try:
         client = get_api_client()
 
@@ -374,35 +377,44 @@ def my_assets():
 @non_viewer_required
 def assets():
     # Get filter parameters and page number
-    page = request.args.get('page', 1, type=int)
-    filters = {k: v for k, v in request.args.items() if v and k != 'page'}
+    page = request.args.get("page", 1, type=int)
+    filters = {k: v for k, v in request.args.items() if v and k != "page"}
 
     try:
         client = get_api_client()
 
         # Get assets with filters and pagination
-        filters['page'] = page
+        filters["page"] = page
         assets_response = client.get_assets(filters)
 
         # Extract items and pagination
-        if isinstance(assets_response, dict) and 'items' in assets_response:
-            assets = assets_response['items']
-            pagination = assets_response.get('pagination', {})
+        if isinstance(assets_response, dict) and "items" in assets_response:
+            assets = assets_response["items"]
+            pagination = assets_response.get("pagination", {})
         else:
             assets = assets_response if assets_response else []
             pagination = None
 
         # Get departments for filter
         departments = extract_items(client.get_departments())
+
+        # Get asset categories for filter
+        categories = extract_items(client.get_categories())
     except Exception as e:
         app.logger.exception(e)
         assets = []
         departments = []
+        categories = []
         pagination = None
         flash("Không thể tải danh sách tài sản", "warning")
 
     return render_template(
-        "assets/list.html", assets=assets, departments=departments, filters=filters, pagination=pagination
+        "assets/list.html",
+        assets=assets,
+        departments=departments,
+        categories=categories,
+        filters=filters,
+        pagination=pagination,
     )
 
 
@@ -429,39 +441,50 @@ def departments():
             flash("Không thể tạo phòng ban", "danger")
 
     try:
-        sort_by = request.args.get('sort_by', '')
-        sort_order = request.args.get('sort_order', 'asc')
-        search = request.args.get('search', '')
+        sort_by = request.args.get("sort_by", "")
+        sort_order = request.args.get("sort_order", "asc")
+        search = request.args.get("search", "")
 
         client = get_api_client()
 
         # Build params dict
         params = {}
         if sort_by:
-            params['sort_by'] = sort_by
+            params["sort_by"] = sort_by
         if sort_order:
-            params['sort_order'] = sort_order
+            params["sort_order"] = sort_order
         if search:
-            params['search'] = search
+            params["search"] = search
 
         departments = extract_items(client.get_departments(**params))
         users = extract_items(client.get_users())
 
+        # Get current user's managed department IDs
+        current_user = session.get("user")
+        managed_dept_ids = []
+        if current_user and current_user.get("departments"):
+            managed_dept_ids = [
+                dept["id"]
+                for dept in current_user["departments"]
+                if dept.get("is_manager", False)
+            ]
+
         # Pass filters to template
-        filters = {
-            'sort_by': sort_by,
-            'sort_order': sort_order,
-            'search': search
-        }
+        filters = {"sort_by": sort_by, "sort_order": sort_order, "search": search}
     except Exception as e:
         app.logger.exception(e)
         departments = []
         users = []
         filters = {}
+        managed_dept_ids = []
         flash("Không thể tải danh sách phòng ban", "warning")
 
     return render_template(
-        "departments/list.html", departments=departments, users=users, filters=filters
+        "departments/list.html",
+        departments=departments,
+        users=users,
+        filters=filters,
+        managed_dept_ids=managed_dept_ids,
     )
 
 
@@ -470,12 +493,12 @@ def departments():
 @admin_required
 def users():
     try:
-        page = request.args.get('page', 1, type=int)
-        sort_by = request.args.get('sort_by', '')
-        sort_order = request.args.get('sort_order', 'asc')
-        search = request.args.get('search', '')
-        role = request.args.get('role', '')
-        department_id = request.args.get('department_id', '')
+        page = request.args.get("page", 1, type=int)
+        sort_by = request.args.get("sort_by", "")
+        sort_order = request.args.get("sort_order", "asc")
+        search = request.args.get("search", "")
+        role = request.args.get("role", "")
+        department_id = request.args.get("department_id", "")
 
         client = get_api_client()
         response = client.get_users(
@@ -484,13 +507,13 @@ def users():
             sort_order=sort_order,
             search=search,
             role=role,
-            department_id=department_id
+            department_id=department_id,
         )
 
         # Extract items and pagination from response
-        if isinstance(response, dict) and 'items' in response:
-            users_list = response['items']
-            pagination = response.get('pagination', {})
+        if isinstance(response, dict) and "items" in response:
+            users_list = response["items"]
+            pagination = response.get("pagination", {})
         else:
             # Fallback for non-paginated response
             users_list = response
@@ -500,11 +523,11 @@ def users():
 
         # Pass filters to template
         filters = {
-            'sort_by': sort_by,
-            'sort_order': sort_order,
-            'search': search,
-            'role': role,
-            'department_id': department_id
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "search": search,
+            "role": role,
+            "department_id": department_id,
         }
 
     except Exception as e:
@@ -515,7 +538,13 @@ def users():
         filters = {}
         flash("Không thể tải danh sách người dùng", "warning")
 
-    return render_template("users/list.html", users=users_list, departments=departments, pagination=pagination, filters=filters)
+    return render_template(
+        "users/list.html",
+        users=users_list,
+        departments=departments,
+        pagination=pagination,
+        filters=filters,
+    )
 
 
 @app.route("/users/create", methods=["GET", "POST"])
@@ -526,8 +555,9 @@ def create_user():
         try:
             client = get_api_client()
 
-            # Get department IDs from form
+            # Get department IDs and manager department IDs from form
             department_ids = request.form.getlist("department_ids")
+            manager_department_ids = request.form.getlist("manager_department_ids")
 
             user_data = {
                 "username": request.form["username"],
@@ -535,8 +565,10 @@ def create_user():
                 "email": request.form["email"],
                 "password": request.form["password"],
                 "role": request.form["role"],
-                "must_change_password": request.form.get("must_change_password") == "true",
+                "must_change_password": request.form.get("must_change_password")
+                == "true",
                 "department_ids": [int(d) for d in department_ids if d],
+                "manager_department_ids": [int(d) for d in manager_department_ids if d],
             }
 
             client.create_user(user_data)
@@ -582,8 +614,9 @@ def edit_user(id):
         try:
             client = get_api_client()
 
-            # Get department IDs from form
+            # Get department IDs and manager department IDs from form
             department_ids = request.form.getlist("department_ids")
+            manager_department_ids = request.form.getlist("manager_department_ids")
 
             user_data = {
                 "username": request.form["username"],
@@ -591,11 +624,12 @@ def edit_user(id):
                 "email": request.form["email"],
                 "role": request.form["role"],
                 "department_ids": [int(d) for d in department_ids if d],
+                "manager_department_ids": [int(d) for d in manager_department_ids if d],
             }
 
             client.update_user(id, user_data)
             flash("Cập nhật người dùng thành công", "success")
-            return redirect(url_for("users"))
+            return redirect(url_for("user_detail", id=id))
         except Exception as e:
             app.logger.exception(e)
             flash(f"Không thể cập nhật người dùng: {str(e)}", "danger")
@@ -612,25 +646,63 @@ def edit_user(id):
     return render_template("users/edit.html", user=user, departments=departments)
 
 
+@app.route("/users/<int:id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def delete_user(id):
+    try:
+        client = get_api_client()
+        client.delete_user(id)
+        flash("Xóa người dùng thành công!", "success")
+    except Exception as e:
+        app.logger.exception(e)
+        flash(f"Lỗi: Không thể xóa người dùng. {str(e)}", "danger")
+
+    return redirect(url_for("users"))
+
+
+@app.route("/users/<int:id>/reset-password", methods=["POST"])
+@login_required
+@admin_required
+def reset_user_password(id):
+    try:
+        data = request.get_json()
+        if not data or not data.get("password"):
+            return jsonify({"message": "Password is required"}), 400
+
+        app.logger.info(f"Resetting password for user {id}")
+        app.logger.info(f"Session has access_token: {'access_token' in session}")
+
+        client = get_api_client()
+        result = client.reset_user_password(
+            id,
+            {
+                "password": data["password"],
+                "must_change_password": data.get("must_change_password", True),
+            },
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        app.logger.exception(e)
+        return jsonify({"message": f"Không thể đặt lại mật khẩu: {str(e)}"}), 500
+
+
 @app.route("/users/sample-csv")
 @login_required
 @admin_required
 def download_users_sample_csv():
     try:
         client = get_api_client()
-        response = client.session.get(
-            f"{client.base_url}/users/sample-csv",
-            timeout=10
-        )
+        response = client.session.get(f"{client.base_url}/users/sample-csv", timeout=10)
 
         if response.status_code == 200:
             output = io.BytesIO(response.content)
             output.seek(0)
             return send_file(
                 output,
-                mimetype='text/csv',
+                mimetype="text/csv",
                 as_attachment=True,
-                download_name='users_sample.csv'
+                download_name="users_sample.csv",
             )
         else:
             flash("Không thể tải mẫu CSV", "danger")
@@ -646,30 +718,36 @@ def download_users_sample_csv():
 @admin_required
 def upload_users_csv():
     try:
-        if 'file' not in request.files:
+        if "file" not in request.files:
             return jsonify({"error": "No file provided"}), 400
 
-        file = request.files['file']
-        if file.filename == '':
+        file = request.files["file"]
+        if file.filename == "":
             return jsonify({"error": "No file selected"}), 400
 
-        if not file.filename.endswith('.csv'):
+        if not file.filename.endswith(".csv"):
             return jsonify({"error": "File must be a CSV"}), 400
 
         client = get_api_client()
 
         # Forward the file to the backend API
-        files = {'file': (file.filename, file.stream, 'text/csv')}
+        files = {"file": (file.filename, file.stream, "text/csv")}
         response = client.session.post(
-            f"{client.base_url}/users/upload-csv",
-            files=files,
-            timeout=30
+            f"{client.base_url}/users/upload-csv", files=files, timeout=30
         )
 
-        if response.status_code in [200, 201, 207]:  # 207 = Multi-Status (partial success)
+        if response.status_code in [
+            200,
+            201,
+            207,
+        ]:  # 207 = Multi-Status (partial success)
             return jsonify(response.json())
         else:
-            error_msg = response.json().get('message', 'Upload failed') if response.content else 'Upload failed'
+            error_msg = (
+                response.json().get("message", "Upload failed")
+                if response.content
+                else "Upload failed"
+            )
             return jsonify({"error": error_msg}), response.status_code
 
     except Exception as e:
@@ -684,8 +762,7 @@ def download_assets_sample_csv():
     try:
         client = get_api_client()
         response = client.session.get(
-            f"{client.base_url}/assets/sample-csv",
-            timeout=10
+            f"{client.base_url}/assets/sample-csv", timeout=10
         )
 
         if response.status_code == 200:
@@ -693,9 +770,9 @@ def download_assets_sample_csv():
             output.seek(0)
             return send_file(
                 output,
-                mimetype='text/csv',
+                mimetype="text/csv",
                 as_attachment=True,
-                download_name='assets_sample.csv'
+                download_name="assets_sample.csv",
             )
         else:
             flash("Không thể tải mẫu CSV", "danger")
@@ -748,7 +825,12 @@ def create_asset():
         users = []
         categories = []
 
-    return render_template("assets/create.html", departments=departments, users=users, categories=categories)
+    return render_template(
+        "assets/create.html",
+        departments=departments,
+        users=users,
+        categories=categories,
+    )
 
 
 @app.route("/assets/<int:id>/edit", methods=["GET", "POST"])
@@ -792,7 +874,11 @@ def edit_asset(id):
         return redirect(url_for("assets"))
 
     return render_template(
-        "assets/edit.html", asset=asset, departments=departments, users=users, categories=categories
+        "assets/edit.html",
+        asset=asset,
+        departments=departments,
+        users=users,
+        categories=categories,
     )
 
 
@@ -850,6 +936,61 @@ def transfer_asset(id):
     )
 
 
+@app.route("/assets/<int:id>/delete", methods=["POST"])
+@login_required
+@non_viewer_required
+def delete_asset(id):
+    try:
+        client = get_api_client()
+        client.delete_asset(id)
+        flash("Xóa tài sản thành công!", "success")
+    except Exception as e:
+        app.logger.exception(e)
+        flash(f"Lỗi: Không thể xóa tài sản. {str(e)}", "danger")
+
+    return redirect(url_for("assets"))
+
+
+@app.route("/assets/<int:id>/mark-inactive", methods=["POST"])
+@login_required
+@non_viewer_required
+def mark_asset_inactive(id):
+    """Mark asset as damaged or disposed"""
+    try:
+        client = get_api_client()
+        data = request.json
+
+        result = client.mark_asset_inactive(
+            asset_id=id,
+            status=data.get("status"),
+            notes=data.get("notes"),
+            condition_notes=data.get("condition_notes"),
+        )
+
+        return jsonify(result), 200
+    except Exception as e:
+        app.logger.error(f"Error marking asset inactive: {str(e)}")
+        return jsonify({"message": str(e)}), 500
+
+
+@app.route("/assets/<int:id>/propose-liquidation", methods=["POST"])
+@login_required
+@non_viewer_required
+def propose_asset_for_liquidation(id):
+    """Propose or unpropose asset for liquidation"""
+    try:
+        client = get_api_client()
+        data = request.json
+        propose = data.get("propose_for_liquidation", True)
+
+        result = client.propose_asset_for_liquidation(asset_id=id, propose=propose)
+
+        return jsonify(result), 200
+    except Exception as e:
+        app.logger.error(f"Error proposing asset for liquidation: {str(e)}")
+        return jsonify({"message": str(e)}), 500
+
+
 @app.route("/departments/<int:id>")
 @login_required
 def department_detail(id):
@@ -883,7 +1024,7 @@ def edit_department(id):
                 "name": request.form["name"],
                 "description": request.form.get("description", ""),
                 "user_ids": [int(u) for u in user_ids if u],
-                "manager_ids": [int(m) for m in manager_ids if m],
+                "manager_ids": [int(m) for m in manager_ids if m and m.is_manager],
             }
 
             client.update_department(id, department_data)
@@ -896,7 +1037,11 @@ def edit_department(id):
     try:
         client = get_api_client()
         department = client.get_department(id)
-        users = extract_items(client.get_users())
+        users_response = client.get_users()
+        users = extract_items(users_response)
+        app.logger.info(f"Department edit: got {len(users)} users")
+        if users:
+            app.logger.info(f"First user sample: {users[0]}")
     except Exception as e:
         app.logger.exception(e)
         flash("Không thể tải thông tin phòng ban", "danger")
@@ -974,7 +1119,7 @@ def reports():
         departments = extract_items(client.get_departments())
 
         # Get users for user activity filter (admin only)
-        if session.get("user", {}).get("role") == "admin":
+        if session.get("user", {}).get("role") == "ADMIN":
             users_list = extract_items(client.get_users())
 
         # Get report data if filters are provided
@@ -1002,23 +1147,22 @@ def reports():
 @login_required
 def proxy_api(path):
     url = f"{API_BASE_URL}/{path}"
-    app.logger.info(f"Calling path {url} with method {request.method}")
+    headers = get_headers()
+    app.logger.info(
+        f"Calling path {url} with method {request.method}, headers={headers}"
+    )
 
     try:
         if request.method == "GET":
             response = requests.get(
-                url, params=request.args, headers=get_headers(), timeout=5
+                url, params=request.args, headers=headers, timeout=5
             )
         elif request.method == "POST":
-            response = requests.post(
-                url, json=request.json, headers=get_headers(), timeout=5
-            )
+            response = requests.post(url, json=request.json, headers=headers, timeout=5)
         elif request.method == "PUT":
-            response = requests.put(
-                url, json=request.json, headers=get_headers(), timeout=5
-            )
+            response = requests.put(url, json=request.json, headers=headers, timeout=5)
         elif request.method == "DELETE":
-            response = requests.delete(url, headers=get_headers(), timeout=5)
+            response = requests.delete(url, headers=headers, timeout=5)
 
         # Handle response
         if response.headers.get("content-type", "").startswith("application/json"):
@@ -1171,18 +1315,18 @@ def audit_logs():
     client = get_api_client()
 
     # Get pagination parameters
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 50, type=int)
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
     offset = (page - 1) * per_page
 
     # Get filter parameters
     filters = {
-        'start_date': request.args.get('start_date'),
-        'end_date': request.args.get('end_date'),
-        'action': request.args.get('action'),
-        'entity_type': request.args.get('entity_type'),
-        'limit': per_page,
-        'offset': offset
+        "start_date": request.args.get("start_date"),
+        "end_date": request.args.get("end_date"),
+        "action": request.args.get("action"),
+        "entity_type": request.args.get("entity_type"),
+        "limit": per_page,
+        "offset": offset,
     }
 
     # Remove None values
@@ -1190,33 +1334,35 @@ def audit_logs():
 
     try:
         response = client.get_audit_logs(filters)
-        logs = response.get('logs', [])
-        total_count = response.get('total_count', 0)
+        logs = response.get("logs", [])
+        total_count = response.get("total_count", 0)
 
         # Calculate pagination
         total_pages = (total_count + per_page - 1) // per_page if total_count > 0 else 1
         pagination = {
-            'page': page,
-            'per_page': per_page,
-            'total': total_count,
-            'total_pages': total_pages,
-            'has_prev': page > 1,
-            'has_next': page < total_pages,
-            'prev_page': page - 1 if page > 1 else None,
-            'next_page': page + 1 if page < total_pages else None
+            "page": page,
+            "per_page": per_page,
+            "total": total_count,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+            "prev_page": page - 1 if page > 1 else None,
+            "next_page": page + 1 if page < total_pages else None,
         }
 
         return render_template(
-            'audit_logs/list.html',
+            "audit_logs/list.html",
             logs=logs,
             total_count=total_count,
             filters=request.args,
-            pagination=pagination
+            pagination=pagination,
         )
     except Exception as e:
         app.logger.error(f"Error loading audit logs: {str(e)}")
         flash(f"Lỗi khi tải audit logs: {str(e)}", "danger")
-        return render_template('audit_logs/list.html', logs=[], total_count=0, filters={}, pagination=None)
+        return render_template(
+            "audit_logs/list.html", logs=[], total_count=0, filters={}, pagination=None
+        )
 
 
 @app.route("/api/audit-logs/archived")
@@ -1277,11 +1423,26 @@ def settings():
                 "login_block_minutes": request.form.get("login_block_minutes"),
                 "audit_archive_days": request.form.get("audit_archive_days"),
                 "password_min_length": request.form.get("password_min_length"),
-                "password_require_uppercase": "true" if request.form.get("password_require_uppercase") else "false",
-                "password_require_lowercase": "true" if request.form.get("password_require_lowercase") else "false",
-                "password_require_digit": "true" if request.form.get("password_require_digit") else "false",
-                "password_require_special": "true" if request.form.get("password_require_special") else "false",
-                "default_items_per_page": request.form.get("default_items_per_page")
+                "password_require_uppercase": (
+                    "true"
+                    if request.form.get("password_require_uppercase")
+                    else "false"
+                ),
+                "password_require_lowercase": (
+                    "true"
+                    if request.form.get("password_require_lowercase")
+                    else "false"
+                ),
+                "password_require_digit": (
+                    "true" if request.form.get("password_require_digit") else "false"
+                ),
+                "password_require_special": (
+                    "true" if request.form.get("password_require_special") else "false"
+                ),
+                "default_items_per_page": request.form.get("default_items_per_page"),
+                "bad_assets_department_id": request.form.get(
+                    "bad_assets_department_id"
+                ),
             }
 
             # Update settings
@@ -1297,12 +1458,217 @@ def settings():
         settings_list = client.get_settings()
         # Convert list to dict for easier access
         settings_dict = {s["key"]: s for s in settings_list}
+
+        # Get departments for bad assets department dropdown
+        departments = extract_items(client.get_departments())
     except Exception as e:
         app.logger.error(f"Error loading settings: {str(e)}")
         flash(f"Lỗi khi tải cài đặt: {str(e)}", "danger")
         settings_dict = {}
+        departments = []
 
-    return render_template("settings/index.html", settings=settings_dict)
+    return render_template(
+        "settings/index.html", settings=settings_dict, departments=departments
+    )
+
+
+@app.route("/settings/email", methods=["GET", "POST"])
+@login_required
+@admin_required
+def email_settings():
+    """Email configuration page"""
+    client = get_api_client()
+
+    if request.method == "POST":
+        try:
+            # Get form data
+            email_config = {
+                "smtp_host": request.form.get("smtp_host"),
+                "smtp_port": int(request.form.get("smtp_port", 587)),
+                "smtp_username": request.form.get("smtp_username"),
+                "from_email": request.form.get("from_email"),
+                "from_name": request.form.get("from_name", "Asset Management System"),
+                "use_tls": request.form.get("use_tls") == "true",
+                "use_ssl": request.form.get("use_ssl") == "true",
+                "enabled": request.form.get("enabled") == "true",
+                "send_welcome_email": request.form.get("send_welcome_email") == "true",
+            }
+
+            # Only include password if provided
+            smtp_password = request.form.get("smtp_password")
+            if smtp_password:
+                email_config["smtp_password"] = smtp_password
+
+            # Update email config
+            response = client.post("/email-settings", json=email_config)
+            if response and response.status_code in [200, 201]:
+                flash("Cấu hình email đã được cập nhật thành công", "success")
+            else:
+                flash(
+                    f"Lỗi khi cập nhật cấu hình email: {response.json().get('message', 'Unknown error')}",
+                    "danger",
+                )
+
+            return redirect(url_for("email_settings"))
+        except Exception as e:
+            app.logger.error(f"Error updating email config: {str(e)}")
+            flash(f"Lỗi khi cập nhật cấu hình email: {str(e)}", "danger")
+
+    # Get current email config
+    try:
+        response = client.get("/email-settings")
+        config = response.json() if response and response.status_code == 200 else None
+    except Exception as e:
+        app.logger.error(f"Error loading email config: {str(e)}")
+        config = None
+
+    return render_template("settings/email.html", config=config)
+
+
+@app.route("/settings/email/test", methods=["POST"])
+@login_required
+@admin_required
+def test_email():
+    """Test email configuration"""
+    client = get_api_client()
+
+    try:
+        # Use longer timeout for email operations (30 seconds)
+        response = client.post("/email-settings/test", timeout=30)
+        if response and response.status_code == 200:
+            return jsonify(response.json()), 200
+        else:
+            error_msg = (
+                response.json().get("message", "Unknown error")
+                if response
+                else "Connection failed"
+            )
+            return jsonify({"message": error_msg}), (
+                response.status_code if response else 500
+            )
+    except Exception as e:
+        app.logger.error(f"Error testing email: {str(e)}")
+        return jsonify({"message": str(e)}), 500
+
+
+@app.route("/trash")
+@login_required
+@admin_required
+def trash():
+    """Trash management page (admin only)"""
+    try:
+        client = get_api_client()
+
+        # Get all deleted items
+        trash_users_response = client.get_trash_users()
+        trash_departments_response = client.get_trash_departments()
+        trash_assets_response = client.get_trash_assets()
+
+        # Extract items from response
+        trash_users = trash_users_response.get("items", [])
+        trash_departments = trash_departments_response.get("items", [])
+        trash_assets = trash_assets_response.get("items", [])
+
+        return render_template(
+            "trash/list.html",
+            trash_users=trash_users,
+            trash_departments=trash_departments,
+            trash_assets=trash_assets,
+        )
+    except Exception as e:
+        app.logger.error(f"Error loading trash page: {str(e)}")
+        flash(f"Lỗi khi tải trang thùng rác: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/trash/users/<int:user_id>/restore", methods=["POST"])
+@login_required
+@admin_required
+def restore_user(user_id):
+    """Restore a deleted user"""
+    try:
+        client = get_api_client()
+        client.restore_user(user_id)
+        flash("Khôi phục người dùng thành công!", "success")
+    except Exception as e:
+        app.logger.error(f"Error restoring user: {str(e)}")
+        flash(f"Lỗi khi khôi phục người dùng: {str(e)}", "danger")
+    return redirect(url_for("trash"))
+
+
+@app.route("/trash/departments/<int:dept_id>/restore", methods=["POST"])
+@login_required
+@admin_required
+def restore_department(dept_id):
+    """Restore a deleted department"""
+    try:
+        client = get_api_client()
+        client.restore_department(dept_id)
+        flash("Khôi phục phòng ban thành công!", "success")
+    except Exception as e:
+        app.logger.error(f"Error restoring department: {str(e)}")
+        flash(f"Lỗi khi khôi phục phòng ban: {str(e)}", "danger")
+    return redirect(url_for("trash"))
+
+
+@app.route("/trash/assets/<int:asset_id>/restore", methods=["POST"])
+@login_required
+@admin_required
+def restore_asset(asset_id):
+    """Restore a deleted asset"""
+    try:
+        client = get_api_client()
+        client.restore_asset(asset_id)
+        flash("Khôi phục tài sản thành công!", "success")
+    except Exception as e:
+        app.logger.error(f"Error restoring asset: {str(e)}")
+        flash(f"Lỗi khi khôi phục tài sản: {str(e)}", "danger")
+    return redirect(url_for("trash"))
+
+
+@app.route("/trash/users/<int:user_id>/permanent-delete", methods=["POST"])
+@login_required
+@admin_required
+def permanent_delete_user(user_id):
+    """Permanently delete a user"""
+    try:
+        client = get_api_client()
+        client.permanent_delete_user(user_id)
+        flash("Đã xóa vĩnh viễn người dùng!", "success")
+    except Exception as e:
+        app.logger.error(f"Error permanently deleting user: {str(e)}")
+        flash(f"Lỗi khi xóa vĩnh viễn người dùng: {str(e)}", "danger")
+    return redirect(url_for("trash"))
+
+
+@app.route("/trash/departments/<int:dept_id>/permanent-delete", methods=["POST"])
+@login_required
+@admin_required
+def permanent_delete_department(dept_id):
+    """Permanently delete a department"""
+    try:
+        client = get_api_client()
+        client.permanent_delete_department(dept_id)
+        flash("Đã xóa vĩnh viễn phòng ban!", "success")
+    except Exception as e:
+        app.logger.error(f"Error permanently deleting department: {str(e)}")
+        flash(f"Lỗi khi xóa vĩnh viễn phòng ban: {str(e)}", "danger")
+    return redirect(url_for("trash"))
+
+
+@app.route("/trash/assets/<int:asset_id>/permanent-delete", methods=["POST"])
+@login_required
+@admin_required
+def permanent_delete_asset(asset_id):
+    """Permanently delete an asset"""
+    try:
+        client = get_api_client()
+        client.permanent_delete_asset(asset_id)
+        flash("Đã xóa vĩnh viễn tài sản!", "success")
+    except Exception as e:
+        app.logger.error(f"Error permanently deleting asset: {str(e)}")
+        flash(f"Lỗi khi xóa vĩnh viễn tài sản: {str(e)}", "danger")
+    return redirect(url_for("trash"))
 
 
 @app.route("/categories")
@@ -1310,40 +1676,36 @@ def settings():
 @admin_required
 def categories():
     try:
-        page = request.args.get('page', 1, type=int)
-        sort_by = request.args.get('sort_by', '')
-        sort_order = request.args.get('sort_order', 'asc')
-        search = request.args.get('search', '')
+        page = request.args.get("page", 1, type=int)
+        sort_by = request.args.get("sort_by", "")
+        sort_order = request.args.get("sort_order", "asc")
+        search = request.args.get("search", "")
 
         client = get_api_client()
 
         # Build params dict
         params = {}
         if page:
-            params['page'] = page
+            params["page"] = page
         if sort_by:
-            params['sort_by'] = sort_by
+            params["sort_by"] = sort_by
         if sort_order:
-            params['sort_order'] = sort_order
+            params["sort_order"] = sort_order
         if search:
-            params['search'] = search
+            params["search"] = search
 
         response = client.get_categories(**params)
 
         # Extract items and pagination
-        if isinstance(response, dict) and 'items' in response:
-            categories_list = response['items']
-            pagination = response.get('pagination', {})
+        if isinstance(response, dict) and "items" in response:
+            categories_list = response["items"]
+            pagination = response.get("pagination", {})
         else:
             categories_list = response if response else []
             pagination = None
 
         # Pass filters to template
-        filters = {
-            'sort_by': sort_by,
-            'sort_order': sort_order,
-            'search': search
-        }
+        filters = {"sort_by": sort_by, "sort_order": sort_order, "search": search}
 
     except Exception as e:
         app.logger.exception(e)
@@ -1352,7 +1714,12 @@ def categories():
         filters = {}
         flash("Không thể tải danh sách loại tài sản", "warning")
 
-    return render_template("categories/list.html", categories=categories_list, pagination=pagination, filters=filters)
+    return render_template(
+        "categories/list.html",
+        categories=categories_list,
+        pagination=pagination,
+        filters=filters,
+    )
 
 
 @app.route("/categories/create", methods=["GET", "POST"])
@@ -1364,7 +1731,7 @@ def create_category():
             client = get_api_client()
             category_data = {
                 "name": request.form["name"],
-                "description": request.form.get("description", "")
+                "description": request.form.get("description", ""),
             }
             client.create_category(category_data)
             flash("Tạo loại tài sản thành công", "success")
@@ -1386,7 +1753,7 @@ def edit_category(id):
         if request.method == "POST":
             category_data = {
                 "name": request.form["name"],
-                "description": request.form.get("description", "")
+                "description": request.form.get("description", ""),
             }
             client.update_category(id, category_data)
             flash("Cập nhật loại tài sản thành công", "success")

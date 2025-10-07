@@ -12,20 +12,29 @@ def get_my_assets():
     current_user_id = get_jwt_identity()
     current_user = User.query.get(current_user_id)
 
-    # Viewers can only see their own assets
+    # Regular users (non-managers) can only see their own assets
     # Managers and admins can use regular asset endpoints
-    if current_user.role == UserRole.VIEWER:
-        assets = Asset.query.filter_by(assigned_to_id=current_user_id).all()
-    else:
-        # For non-viewers, show all assets they have access to
-        if current_user.role == UserRole.ADMIN:
-            assets = Asset.query.all()
-        else:  # MANAGER
-            user_dept_ids = [dept.id for dept in current_user.departments]
-            if user_dept_ids:
-                assets = Asset.query.filter(Asset.department_id.in_(user_dept_ids)).all()
+    if current_user.role == UserRole.USER:
+        is_manager = any(assoc.is_manager for assoc in current_user.department_associations)
+        if not is_manager:
+            # Regular users can only see ACTIVE assets assigned to them
+            from models import AssetStatus
+
+            assets = Asset.query.filter_by(
+                assigned_to_id=current_user_id, status=AssetStatus.ACTIVE
+            ).all()
+        else:
+            # Managers show all assets from departments they manage
+            managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+            if managed_dept_ids:
+                assets = Asset.query.filter(
+                    Asset.department_id.in_(managed_dept_ids)
+                ).all()
             else:
                 assets = []
+    else:
+        # Admins see all assets
+        assets = Asset.query.all()
 
     return jsonify([asset.to_dict() for asset in assets])
 
@@ -37,18 +46,23 @@ def get_my_stats():
     current_user_id = get_jwt_identity()
     current_user = User.query.get(current_user_id)
 
-    if current_user.role == UserRole.VIEWER:
-        assets = Asset.query.filter_by(assigned_to_id=current_user_id).all()
-    else:
-        # For other roles, return general stats
-        if current_user.role == UserRole.ADMIN:
-            assets = Asset.query.all()
-        else:  # MANAGER
-            user_dept_ids = [dept.id for dept in current_user.departments]
-            if user_dept_ids:
-                assets = Asset.query.filter(Asset.department_id.in_(user_dept_ids)).all()
+    if current_user.role == UserRole.USER:
+        is_manager = any(assoc.is_manager for assoc in current_user.department_associations)
+        if not is_manager:
+            # Regular users see only their assigned assets
+            assets = Asset.query.filter_by(assigned_to_id=current_user_id).all()
+        else:
+            # Managers see assets from departments they manage
+            managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+            if managed_dept_ids:
+                assets = Asset.query.filter(
+                    Asset.department_id.in_(managed_dept_ids)
+                ).all()
             else:
                 assets = []
+    else:
+        # Admins see all assets
+        assets = Asset.query.all()
 
     total_value = sum(asset.purchase_value or 0 for asset in assets)
     total_count = len(assets)
@@ -65,10 +79,12 @@ def get_my_stats():
         category = asset.category or "Other"
         by_category[category] = by_category.get(category, 0) + 1
 
-    return jsonify({
-        "total_count": total_count,
-        "total_value": total_value,
-        "by_status": by_status,
-        "by_category": by_category,
-        "role": current_user.role.value
-    })
+    return jsonify(
+        {
+            "total_count": total_count,
+            "total_value": total_value,
+            "by_status": by_status,
+            "by_category": by_category,
+            "role": current_user.role.value,
+        }
+    )

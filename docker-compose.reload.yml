@@ -22,10 +22,11 @@ services:
         python -m gunicorn --bind=0.0.0.0:3000 --workers=3 --timeout=120 \
         --reload frontend:app
 
-  postgres:
-    networks:
-      asset-network:
-        ipv4_address: 172.18.0.5 # set static IP for remembering to connect using adminer UI
+  # Email Worker - Development mode
+  email_worker:
+    environment:
+      FLASK_ENV: "development"
+      EMAIL_WORKER_POLL_INTERVAL: 2  # Faster polling in dev mode
 
   adminer:
     image: adminer

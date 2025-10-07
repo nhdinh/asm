@@ -18,39 +18,54 @@
                 <textarea name="description" rows="3"
                           class="border rounded px-3 py-2 w-full">{{ department.description or '' }}</textarea>
             </div>
-            <div>
-                <label class="block text-sm font-medium mb-1">Quản Lý Phòng</label>
-                <div class="border rounded px-3 py-2 max-h-40 overflow-y-auto bg-gray-50">
-                    {% for user in users %}
-                    {% if user.role in ['admin', 'manager'] %}
-                    <div class="flex items-center mb-2">
-                        <input type="checkbox" name="manager_ids" value="{{ user.id }}"
-                               id="manager_{{ user.id }}" class="mr-2"
-                               {% if department.managers and user.id in (department.managers | map(attribute='id') | list) %}checked{% endif %}>
-                        <label for="manager_{{ user.id }}" class="cursor-pointer">
-                            {{ user.fullname or user.username }} ({{ user.role|upper }})
-                        </label>
+            <div class="bg-blue-50 border border-blue-200 rounded p-3">
+                <div class="flex items-start">
+                    <svg class="w-5 h-5 text-blue-500 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                    </svg>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-blue-800">Quản Lý Phòng Ban</p>
+                        <p class="text-xs text-blue-700 mt-1">Người quản lý phòng ban là các thành viên thuộc phòng ban và được đánh dấu là quản lý trong hệ thống.</p>
                     </div>
-                    {% endif %}
-                    {% endfor %}
                 </div>
-                <p class="text-xs text-gray-500 mt-1">Chọn người quản lý phòng ban (chỉ hiển thị Admin và Manager)</p>
             </div>
             <div>
-                <label class="block text-sm font-medium mb-1">Thành Viên</label>
+                <label class="block text-sm font-medium mb-1">Thành Viên & Quản Lý</label>
                 <div class="border rounded px-3 py-2 max-h-60 overflow-y-auto">
                     {% for user in users %}
-                    <div class="flex items-center mb-2">
+                    {% set ns = namespace(is_member=false, is_manager=false) %}
+                    {% if user.departments %}
+                        {% for dept in user.departments %}
+                            {% if dept['id'] == department.id %}
+                                {% set ns.is_member = true %}
+                                {% if dept.get('is_manager') %}
+                                    {% set ns.is_manager = true %}
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                    <div class="flex items-center mb-2 p-2 hover:bg-gray-50 rounded">
                         <input type="checkbox" name="user_ids" value="{{ user.id }}"
-                               id="user_{{ user.id }}" class="mr-2"
-                               {% if user.departments and department.id in (user.departments | map(attribute='id') | list) %}checked{% endif %}>
-                        <label for="user_{{ user.id }}" class="cursor-pointer">
+                               id="user_{{ user.id }}" class="mr-3"
+                               onchange="handleMemberCheckbox({{ user.id }})"
+                               {% if ns.is_member %}checked{% endif %}>
+                        <label for="user_{{ user.id }}" class="cursor-pointer flex-1">
                             {{ user.username }} ({{ user.email }})
                         </label>
+                        <div class="flex items-center ml-2">
+                            <input type="checkbox" name="manager_ids" value="{{ user.id }}"
+                                   id="manager_{{ user.id }}" class="mr-1"
+                                   onchange="handleManagerCheckbox({{ user.id }})"
+                                   {% if ns.is_manager %}checked{% endif %}
+                                   {% if not ns.is_member %}disabled{% endif %}>
+                            <label for="manager_{{ user.id }}" class="text-sm text-gray-600 cursor-pointer">
+                                Quản lý
+                            </label>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
-                <p class="text-xs text-gray-500 mt-1">Chọn các thành viên thuộc phòng ban này</p>
+                <p class="text-xs text-gray-500 mt-1">Chọn thành viên và đánh dấu ai là quản lý phòng ban</p>
             </div>
         </div>
 
@@ -65,4 +80,31 @@
         </div>
     </form>
 </div>
+
+<script>
+function handleMemberCheckbox(userId) {
+    const memberCheckbox = document.getElementById('user_' + userId);
+    const managerCheckbox = document.getElementById('manager_' + userId);
+
+    if (!memberCheckbox.checked) {
+        // If user is unchecked as member, also uncheck and disable manager
+        managerCheckbox.checked = false;
+        managerCheckbox.disabled = true;
+    } else {
+        // If user is checked as member, enable manager checkbox
+        managerCheckbox.disabled = false;
+    }
+}
+
+function handleManagerCheckbox(userId) {
+    const memberCheckbox = document.getElementById('user_' + userId);
+    const managerCheckbox = document.getElementById('manager_' + userId);
+
+    if (managerCheckbox.checked && !memberCheckbox.checked) {
+        // If manager is checked, also check member
+        memberCheckbox.checked = true;
+        managerCheckbox.disabled = false;
+    }
+}
+</script>
 {% endblock %}

@@ -23,6 +23,66 @@ class ApiClient:
     def set_token(self, token):
         self.session.headers.update({"Authorization": f"Bearer {token}"})
 
+    def get(self, path, params=None, timeout=10):
+        """Generic GET request"""
+        try:
+            url = (
+                f"{self.base_url}{path}"
+                if path.startswith("/")
+                else f"{self.base_url}/{path}"
+            )
+            response = self.session.get(url, params=params, timeout=timeout)
+            response.raise_for_status()
+            return response
+        except Exception as e:
+            self.app.logger.error(f"GET {path} error: {str(e)}")
+            raise
+
+    def post(self, path, json=None, data=None, timeout=10):
+        """Generic POST request"""
+        try:
+            url = (
+                f"{self.base_url}{path}"
+                if path.startswith("/")
+                else f"{self.base_url}/{path}"
+            )
+            response = self.session.post(url, json=json, data=data, timeout=timeout)
+            response.raise_for_status()
+            return response
+        except Exception as e:
+            self.app.logger.error(f"POST {path} error: {str(e)}")
+            raise
+
+    def put(self, path, json=None, data=None, timeout=10):
+        """Generic PUT request"""
+        try:
+            url = (
+                f"{self.base_url}{path}"
+                if path.startswith("/")
+                else f"{self.base_url}/{path}"
+            )
+            response = self.session.put(url, json=json, data=data, timeout=timeout)
+            response.raise_for_status()
+            return response
+        except Exception as e:
+            self.app.logger.error(f"PUT {path} error: {str(e)}")
+            raise
+
+    def delete(self, path, timeout=10):
+        """Generic DELETE request"""
+        try:
+            url = (
+                f"{self.base_url}{path}"
+                if path.startswith("/")
+                else f"{self.base_url}/{path}"
+            )
+            response = self.session.delete(url, timeout=timeout)
+            response.raise_for_status()
+            return response
+        except Exception as e:
+            self.app.logger.error(f"DELETE {path} error: {str(e)}")
+            raise
+
     def login(self, username, password):
         try:
             response = self.session.post(
@@ -72,21 +132,25 @@ class ApiClient:
             self.app.logger.error(f"Update asset error: {str(e)}")
             raise
 
-    def get_departments(self, page=None, per_page=None, sort_by=None, sort_order=None, search=None):
+    def get_departments(
+        self, page=None, per_page=None, sort_by=None, sort_order=None, search=None
+    ):
         try:
             params = {}
             if page:
-                params['page'] = page
+                params["page"] = page
             if per_page:
-                params['per_page'] = per_page
+                params["per_page"] = per_page
             if sort_by:
-                params['sort_by'] = sort_by
+                params["sort_by"] = sort_by
             if sort_order:
-                params['sort_order'] = sort_order
+                params["sort_order"] = sort_order
             if search:
-                params['search'] = search
+                params["search"] = search
 
-            response = self.session.get(f"{self.base_url}/departments", params=params, timeout=10)
+            response = self.session.get(
+                f"{self.base_url}/departments", params=params, timeout=10
+            )
             response.raise_for_status()
 
             return response.json()
@@ -154,25 +218,39 @@ class ApiClient:
             raise
 
     # Users API
-    def get_users(self, page=None, per_page=None, sort_by=None, sort_order=None, search=None, role=None, department_id=None):
+    def get_users(
+        self,
+        page=None,
+        per_page=None,
+        sort_by=None,
+        sort_order=None,
+        search=None,
+        role=None,
+        department_id=None,
+        include_deleted=None,
+    ):
         try:
             params = {}
             if page:
-                params['page'] = page
+                params["page"] = page
             if per_page:
-                params['per_page'] = per_page
+                params["per_page"] = per_page
             if sort_by:
-                params['sort_by'] = sort_by
+                params["sort_by"] = sort_by
             if sort_order:
-                params['sort_order'] = sort_order
+                params["sort_order"] = sort_order
             if search:
-                params['search'] = search
+                params["search"] = search
             if role:
-                params['role'] = role
+                params["role"] = role
             if department_id:
-                params['department_id'] = department_id
+                params["department_id"] = department_id
+            if include_deleted is not None:
+                params["include_deleted"] = include_deleted
 
-            response = self.session.get(f"{self.base_url}/users", params=params, timeout=10)
+            response = self.session.get(
+                f"{self.base_url}/users", params=params, timeout=10
+            )
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -282,7 +360,9 @@ class ApiClient:
     # Asset API
     def get_asset(self, asset_id):
         try:
-            response = self.session.get(f"{self.base_url}/assets/{asset_id}", timeout=10)
+            response = self.session.get(
+                f"{self.base_url}/assets/{asset_id}", timeout=10
+            )
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -298,6 +378,41 @@ class ApiClient:
             return True
         except Exception as e:
             self.app.logger.error(f"Delete asset error: {str(e)}")
+            raise
+
+    def mark_asset_inactive(self, asset_id, status, notes=None, condition_notes=None):
+        """Mark asset as damaged or disposed and transfer to bad assets department"""
+        try:
+            data = {"status": status}
+            if notes:
+                data["notes"] = notes
+            if condition_notes:
+                data["condition_notes"] = condition_notes
+
+            response = self.session.post(
+                f"{self.base_url}/assets/{asset_id}/mark-inactive",
+                json=data,
+                timeout=10,
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Mark asset inactive error: {str(e)}")
+            raise
+
+    def propose_asset_for_liquidation(self, asset_id, propose=True):
+        """Propose or unpropose an asset for liquidation"""
+        try:
+            data = {"propose_for_liquidation": propose}
+            response = self.session.post(
+                f"{self.base_url}/assets/{asset_id}/propose-liquidation",
+                json=data,
+                timeout=10,
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Propose asset for liquidation error: {str(e)}")
             raise
 
     def get_asset_history(self, asset_id):
@@ -360,9 +475,7 @@ class ApiClient:
     def get_my_stats(self):
         """Get stats for current user's assigned assets"""
         try:
-            response = self.session.get(
-                f"{self.base_url}/my-assets/stats", timeout=10
-            )
+            response = self.session.get(f"{self.base_url}/my-assets/stats", timeout=10)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -423,9 +536,7 @@ class ApiClient:
     def get_settings(self):
         """Get all system settings"""
         try:
-            response = self.session.get(
-                f"{self.base_url}/settings", timeout=10
-            )
+            response = self.session.get(f"{self.base_url}/settings", timeout=10)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -438,7 +549,7 @@ class ApiClient:
             response = self.session.put(
                 f"{self.base_url}/settings/bulk",
                 json={"settings": settings_data},
-                timeout=10
+                timeout=10,
             )
             response.raise_for_status()
             return response.json()
@@ -451,9 +562,7 @@ class ApiClient:
         """Update current user's profile"""
         try:
             response = self.session.put(
-                f"{self.base_url}/auth/profile",
-                json=profile_data,
-                timeout=10
+                f"{self.base_url}/auth/profile", json=profile_data, timeout=10
             )
             response.raise_for_status()
             return response.json()
@@ -465,9 +574,7 @@ class ApiClient:
         """Change current user's password"""
         try:
             response = self.session.post(
-                f"{self.base_url}/auth/change-password",
-                json=password_data,
-                timeout=10
+                f"{self.base_url}/auth/change-password", json=password_data, timeout=10
             )
             response.raise_for_status()
             return response.json()
@@ -485,21 +592,25 @@ class ApiClient:
             raise
 
     # Category API
-    def get_categories(self, page=None, per_page=None, sort_by=None, sort_order=None, search=None):
+    def get_categories(
+        self, page=None, per_page=None, sort_by=None, sort_order=None, search=None
+    ):
         try:
             params = {}
             if page:
-                params['page'] = page
+                params["page"] = page
             if per_page:
-                params['per_page'] = per_page
+                params["per_page"] = per_page
             if sort_by:
-                params['sort_by'] = sort_by
+                params["sort_by"] = sort_by
             if sort_order:
-                params['sort_order'] = sort_order
+                params["sort_order"] = sort_order
             if search:
-                params['search'] = search
+                params["search"] = search
 
-            response = self.session.get(f"{self.base_url}/categories", params=params, timeout=10)
+            response = self.session.get(
+                f"{self.base_url}/categories", params=params, timeout=10
+            )
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -508,7 +619,9 @@ class ApiClient:
 
     def get_category(self, category_id):
         try:
-            response = self.session.get(f"{self.base_url}/categories/{category_id}", timeout=10)
+            response = self.session.get(
+                f"{self.base_url}/categories/{category_id}", timeout=10
+            )
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -531,7 +644,7 @@ class ApiClient:
             response = self.session.put(
                 f"{self.base_url}/categories/{category_id}",
                 json=category_data,
-                timeout=10
+                timeout=10,
             )
             response.raise_for_status()
             return response.json()
@@ -548,4 +661,110 @@ class ApiClient:
             return True
         except Exception as e:
             self.app.logger.error(f"Delete category error: {str(e)}")
+            raise
+
+    # Trash Management
+    def get_trash_users(self):
+        """Get all deleted users"""
+        try:
+            response = self.session.get(f"{self.base_url}/trash/users", timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get trash users error: {str(e)}")
+            raise
+
+    def get_trash_departments(self):
+        """Get all deleted departments"""
+        try:
+            response = self.session.get(
+                f"{self.base_url}/trash/departments", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get trash departments error: {str(e)}")
+            raise
+
+    def get_trash_assets(self):
+        """Get all deleted assets"""
+        try:
+            response = self.session.get(f"{self.base_url}/trash/assets", timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Get trash assets error: {str(e)}")
+            raise
+
+    def restore_user(self, user_id):
+        """Restore a deleted user"""
+        try:
+            response = self.session.post(
+                f"{self.base_url}/trash/users/{user_id}/restore", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Restore user error: {str(e)}")
+            raise
+
+    def restore_department(self, dept_id):
+        """Restore a deleted department"""
+        try:
+            response = self.session.post(
+                f"{self.base_url}/trash/departments/{dept_id}/restore", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Restore department error: {str(e)}")
+            raise
+
+    def restore_asset(self, asset_id):
+        """Restore a deleted asset"""
+        try:
+            response = self.session.post(
+                f"{self.base_url}/trash/assets/{asset_id}/restore", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Restore asset error: {str(e)}")
+            raise
+
+    def permanent_delete_user(self, user_id):
+        """Permanently delete a user"""
+        try:
+            response = self.session.delete(
+                f"{self.base_url}/trash/users/{user_id}/permanent-delete", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Permanent delete user error: {str(e)}")
+            raise
+
+    def permanent_delete_department(self, dept_id):
+        """Permanently delete a department"""
+        try:
+            response = self.session.delete(
+                f"{self.base_url}/trash/departments/{dept_id}/permanent-delete",
+                timeout=10,
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Permanent delete department error: {str(e)}")
+            raise
+
+    def permanent_delete_asset(self, asset_id):
+        """Permanently delete an asset"""
+        try:
+            response = self.session.delete(
+                f"{self.base_url}/trash/assets/{asset_id}/permanent-delete", timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.app.logger.error(f"Permanent delete asset error: {str(e)}")
             raise
