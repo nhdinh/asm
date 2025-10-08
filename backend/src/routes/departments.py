@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, current_app, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db, Department, User, UserRole, UserActivity, ActivityStatus
 from audit_logger import audit_logger
@@ -21,29 +21,29 @@ def get_departments():
     query = Department.query_all(include_deleted=include_deleted)
 
     # Apply search filter
-    search = request.args.get('search')
+    search = request.args.get("search")
     if search:
         search_filter = f"%{search}%"
         query = query.filter(
             db.or_(
                 Department.name.ilike(search_filter),
                 Department.description.ilike(search_filter),
-                Department.code.ilike(search_filter)
+                Department.code.ilike(search_filter),
             )
         )
 
     # Apply sorting
     valid_sort_fields = {
-        'name': Department.name,
-        'user_count': Department.user_count,
-        'asset_count': Department.asset_count,
-        'total_value': Department.total_value,
-        'created_at': Department.created_at
+        "name": Department.name,
+        "user_count": Department.user_count,
+        "asset_count": Department.asset_count,
+        "total_value": Department.total_value,
+        "created_at": Department.created_at,
     }
 
     if sort_by in valid_sort_fields:
         sort_column = valid_sort_fields[sort_by]
-        if sort_order == 'desc':
+        if sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
@@ -108,12 +108,12 @@ def create_department():
     audit_logger.log(
         user_id=current_user_id,
         username=current_user.username,
-        action='create',
-        entity_type='department',
+        action="create",
+        entity_type="department",
         entity_id=dept.id,
         new_values=dept.to_dict(),
         details=f"Created department {dept.name}",
-        ip_address=request.remote_addr
+        ip_address=request.remote_addr,
     )
 
     return jsonify(dept.to_dict()), 201
@@ -126,10 +126,22 @@ def update_department(id):
         current_user_id = get_jwt_identity()
         current_user = User.query.get(current_user_id)
 
-        if current_user.role != UserRole.ADMIN:
-            return jsonify({"message": "Unauthorized"}), 403
-
         dept = Department.query.get_or_404(id)
+
+        # Check permissions: Admin can edit all, Manager can only edit their managed departments
+        if current_user.role != UserRole.ADMIN:
+            # Check if user is a manager of this department
+            from models import UserDepartment
+
+            is_manager = UserDepartment.query.filter_by(
+                user_id=current_user_id, department_id=id, is_manager=True
+            ).first()
+
+            if not is_manager:
+                return (
+                    jsonify({"message": "Bạn không có quyền chỉnh sửa phòng ban này"}),
+                    403,
+                )
         data = request.json
 
         # Capture old values for audit
@@ -138,11 +150,18 @@ def update_department(id):
         dept.name = data.get("name", dept.name)
         dept.description = data.get("description", dept.description)
 
-        # Note: Managers are automatically computed from users with MANAGER role
-        # No need to handle manager_ids separately
-
-        # Update users (many-to-many relationship)
+        # Only admin can update department members
         if "user_ids" in data:
+            if current_user.role != UserRole.ADMIN:
+                return (
+                    jsonify(
+                        {
+                            "message": "Chỉ quản trị viên mới có quyền thêm/xóa thành viên vào phòng ban"
+                        }
+                    ),
+                    403,
+                )
+
             from models import UserDepartment
 
             # Get manager IDs from request
@@ -157,9 +176,7 @@ def update_department(id):
                 if user:
                     is_manager = user_id in manager_ids
                     association = UserDepartment(
-                        user_id=user_id,
-                        department_id=dept.id,
-                        is_manager=is_manager
+                        user_id=user_id, department_id=dept.id, is_manager=is_manager
                     )
                     db.session.add(association)
 
@@ -180,19 +197,20 @@ def update_department(id):
         audit_logger.log(
             user_id=current_user_id,
             username=current_user.username,
-            action='update',
-            entity_type='department',
+            action="update",
+            entity_type="department",
             entity_id=dept.id,
             old_values=old_values,
             new_values=dept.to_dict(),
             details=f"Updated department {dept.name}",
-            ip_address=request.remote_addr
+            ip_address=request.remote_addr,
         )
 
         return jsonify(dept.to_dict())
     except Exception as e:
         db.session.rollback()
         import traceback
+
         traceback.print_exc()
         return jsonify({"message": f"Error updating department: {str(e)}"}), 500
 
@@ -221,6 +239,7 @@ def delete_department(id):
 
     # Soft delete - set deleted_at timestamp
     from datetime import datetime
+
     dept.deleted_at = datetime.utcnow()
 
     # Log activity
@@ -240,13 +259,13 @@ def delete_department(id):
     audit_logger.log(
         user_id=current_user_id,
         username=current_user.username,
-        action='delete',
-        entity_type='department',
+        action="delete",
+        entity_type="department",
         entity_id=id,
         old_values=old_values,
         new_values={"deleted_at": dept.deleted_at.isoformat()},
         details=f"Deleted department {dept_name} (soft delete)",
-        ip_address=request.remote_addr
+        ip_address=request.remote_addr,
     )
 
     return "", 204

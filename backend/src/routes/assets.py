@@ -10,6 +10,7 @@ from models import (
     UserActivity,
     ActivityStatus,
     SystemSetting,
+    Department,
 )
 from datetime import datetime
 from audit_logger import audit_logger
@@ -45,12 +46,36 @@ def get_assets():
     include_deleted = request.args.get("include_deleted", "false").lower() == "true"
     query = Asset.query_all(include_deleted=include_deleted)
 
-    # Filter by department for non-admin users - only show assets from departments they manage
+    # Asset access control for non-admin users (managers)
     if current_user.role == UserRole.USER:
+        from models import UserDepartment
         # Get departments where user is manager
         managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+
         if managed_dept_ids:
-            query = query.filter(Asset.department_id.in_(managed_dept_ids))
+            # Manager can see:
+            # 1. If assigned_to_user is NULL: assets in their departments
+            # 2. If assigned_to_user is NOT NULL: ONLY assets assigned to users in their departments
+            query = query.outerjoin(User, Asset.assigned_to_user == User.id)
+            query = query.outerjoin(UserDepartment, User.id == UserDepartment.user_id)
+
+            query = query.filter(
+                db.or_(
+                    # Assets not assigned to any user but in manager's department
+                    db.and_(
+                        Asset.assigned_to_user.is_(None),
+                        Asset.assigned_to_department.in_(managed_dept_ids)
+                    ),
+                    # Assets assigned to users in manager's departments
+                    db.and_(
+                        Asset.assigned_to_user.isnot(None),
+                        UserDepartment.department_id.in_(managed_dept_ids)
+                    )
+                )
+            )
+        else:
+            # User is not a manager of any department, show no assets
+            query = query.filter(db.false())
 
     # Apply filters
     department_id = request.args.get("department_id")
@@ -65,13 +90,37 @@ def get_assets():
         query = query.filter(Asset.status == AssetStatus.ACTIVE)
 
     if department_id:
-        query = query.filter_by(department_id=department_id)
+        from models import UserDepartment
+        # Filter assets by department
+        # Show assets that meet BOTH conditions:
+        # 1. If assigned_to_user is NULL: show if assigned_to_department = department_id
+        # 2. If assigned_to_user is NOT NULL: show ONLY if user belongs to department_id
+
+        # Need fresh joins if not already joined
+        if current_user.role != UserRole.USER:
+            query = query.outerjoin(User, Asset.assigned_to_user == User.id)
+            query = query.outerjoin(UserDepartment, User.id == UserDepartment.user_id)
+
+        query = query.filter(
+            db.or_(
+                # Asset not assigned to any user but in this department
+                db.and_(
+                    Asset.assigned_to_user.is_(None),
+                    Asset.assigned_to_department == department_id
+                ),
+                # Asset assigned to user who belongs to this department
+                db.and_(
+                    Asset.assigned_to_user.isnot(None),
+                    UserDepartment.department_id == department_id
+                )
+            )
+        )
     if status:
         query = query.filter_by(status=AssetStatus[status.upper()])
     if category:
         query = query.filter_by(category=category)
     if assigned_to_id:
-        query = query.filter_by(assigned_to_id=assigned_to_id)
+        query = query.filter(Asset.assigned_to_user == assigned_to_id)
     if search:
         # Search in code, name, description
         search_filter = f"%{search}%"
@@ -144,13 +193,15 @@ def create_asset():
         return jsonify({"message": "Asset code already exists"}), 400
 
     # Validate that assigned user belongs to the asset's department
-    if data.get("assigned_to_id"):
-        assigned_user = User.query.get(data["assigned_to_id"])
+    assigned_to_user = data.get("assigned_to_id") or data.get("assigned_to_user")
+    if assigned_to_user:
+        assigned_user = User.query.get(assigned_to_user)
         if not assigned_user:
             return jsonify({"message": "Assigned user not found"}), 400
 
         user_dept_ids = [dept.id for dept in assigned_user.departments]
-        if data["department_id"] not in user_dept_ids:
+        assigned_to_department = data.get("department_id") or data.get("assigned_to_department")
+        if assigned_to_department and assigned_to_department not in user_dept_ids:
             return (
                 jsonify(
                     {
@@ -177,6 +228,10 @@ def create_asset():
             db.session.flush()  # Get the ID
         category_id = category.id
 
+    # Determine assigned_to_user and assigned_to_department
+    assigned_to_user = data.get("assigned_to_id") or data.get("assigned_to_user")
+    assigned_to_department = data.get("department_id") or data.get("assigned_to_department")
+
     asset = Asset(
         code=data["code"],
         name=data["name"],
@@ -189,21 +244,22 @@ def create_asset():
             if data.get("purchase_date")
             else None
         ),
-        department_id=data["department_id"],
+        assigned_to_department=assigned_to_department,
         status=AssetStatus[data.get("status", "ACTIVE").upper()],
-        assigned_to_id=data.get("assigned_to_id"),
+        assigned_to_user=assigned_to_user,
         condition_notes=data.get("condition_notes"),
+        location=data.get("location"),
     )
 
     db.session.add(asset)
     db.session.flush()  # Get asset.id before commit
 
     # Create transfer record if asset is assigned to a user
-    if data.get("assigned_to_id"):
+    if assigned_to_user:
         transfer = AssetTransfer(
             asset_id=asset.id,
-            to_department_id=data["department_id"],
-            assigned_to_id=data["assigned_to_id"],
+            to_department_id=assigned_to_department,
+            assigned_to_id=assigned_to_user,
             transferred_by=current_user_id,
             notes=f"Bàn giao tài sản lần đầu tiên",
         )
@@ -289,12 +345,23 @@ def update_asset(id):
     if data.get("status"):
         asset.status = AssetStatus[data["status"].upper()]
 
-    # Track if assigned_to changed
-    old_assigned_to = asset.assigned_to_id
+    # Update department FIRST - support both parameter names
+    # This must happen before assigned_to_user validation
+    if "department_id" in data or "assigned_to_department" in data:
+        new_dept_id = data.get("department_id") or data.get("assigned_to_department")
+        if new_dept_id is not None:
+            # Validate department exists
+            department = Department.query.get(new_dept_id)
+            if not department:
+                return jsonify({"message": "Department not found"}), 400
+            asset.assigned_to_department = new_dept_id
 
-    # Update new fields
-    if "assigned_to_id" in data:
-        new_assigned_to = data.get("assigned_to_id")
+    # Track if assigned_to changed
+    old_assigned_to = asset.assigned_to_user
+
+    # Update new fields - support both old and new parameter names
+    if "assigned_to_id" in data or "assigned_to_user" in data:
+        new_assigned_to = data.get("assigned_to_id") or data.get("assigned_to_user")
 
         # Validate that assigned user belongs to the asset's department
         if new_assigned_to is not None:
@@ -303,7 +370,8 @@ def update_asset(id):
                 return jsonify({"message": "Assigned user not found"}), 400
 
             user_dept_ids = [dept.id for dept in assigned_user.departments]
-            if asset.department_id not in user_dept_ids:
+            current_dept = asset.assigned_to_department
+            if current_dept and current_dept not in user_dept_ids:
                 return (
                     jsonify(
                         {
@@ -313,13 +381,23 @@ def update_asset(id):
                     400,
                 )
 
-        asset.assigned_to_id = new_assigned_to
+        asset.assigned_to_user = new_assigned_to
+    elif ("department_id" in data or "assigned_to_department" in data) and asset.assigned_to_user is not None:
+        # If only department is being updated (not assigned_to_user) and asset has an assigned user,
+        # validate that the existing user belongs to the new department
+        assigned_user = User.query.get(asset.assigned_to_user)
+        if assigned_user:
+            user_dept_ids = [dept.id for dept in assigned_user.departments]
+            new_dept = asset.assigned_to_department
+            if new_dept and new_dept not in user_dept_ids:
+                # Unassign user if they don't belong to new department
+                asset.assigned_to_user = None
 
         # Create transfer record if assignment changed
         if new_assigned_to != old_assigned_to and new_assigned_to is not None:
             transfer = AssetTransfer(
                 asset_id=asset.id,
-                to_department_id=asset.department_id,
+                to_department_id=asset.assigned_to_department,
                 assigned_to_id=new_assigned_to,
                 transferred_by=current_user_id,
                 notes=f"Bàn giao tài sản {'lần đầu tiên' if old_assigned_to is None else 'cho người dùng mới'}",
@@ -328,6 +406,9 @@ def update_asset(id):
 
     if "condition_notes" in data:
         asset.condition_notes = data.get("condition_notes")
+
+    if "location" in data:
+        asset.location = data.get("location")
 
     # Log activity
     activity = UserActivity(
@@ -382,14 +463,14 @@ def transfer_asset(id):
         # They CANNOT transfer assets to other departments
         managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
 
-        if asset.department_id not in managed_dept_ids:
+        if asset.assigned_to_department not in managed_dept_ids:
             return (
                 jsonify({"message": "Unauthorized - asset is not in a department you manage"}),
                 403,
             )
 
         # Managers cannot change department - can only reassign to users within same department
-        if data["to_department_id"] != asset.department_id:
+        if data["to_department_id"] != asset.assigned_to_department:
             return (
                 jsonify(
                     {
@@ -399,19 +480,20 @@ def transfer_asset(id):
                 403,
             )
 
-    # Require assigned_to_id when transferring
-    if not data.get("assigned_to_id"):
+    # Require assigned_to_id or assigned_to_user when transferring
+    assigned_to_user = data.get("assigned_to_id") or data.get("assigned_to_user")
+    if not assigned_to_user:
         return (
             jsonify(
                 {
-                    "message": "assigned_to_id is required - asset must be assigned to a specific user"
+                    "message": "assigned_to_id or assigned_to_user is required - asset must be assigned to a specific user"
                 }
             ),
             400,
         )
 
     # Validate that assigned user belongs to the target department
-    assigned_user = User.query.get(data["assigned_to_id"])
+    assigned_user = User.query.get(assigned_to_user)
     if not assigned_user:
         return jsonify({"message": "Assigned user not found"}), 400
 
@@ -429,19 +511,19 @@ def transfer_asset(id):
     # Create transfer record
     transfer = AssetTransfer(
         asset_id=asset.id,
-        from_department_id=asset.department_id,
+        from_department_id=asset.assigned_to_department,
         to_department_id=data["to_department_id"],
-        assigned_to_id=data.get("assigned_to_id"),  # Support assigning to specific user
+        assigned_to_id=assigned_to_user,
         transferred_by=current_user_id,
         notes=data.get("notes"),
     )
 
     # Update asset department (only admins can change this)
-    asset.department_id = data["to_department_id"]
+    asset.assigned_to_department = data["to_department_id"]
 
     # Update asset assignment if specified
-    if "assigned_to_id" in data:
-        asset.assigned_to_id = data.get("assigned_to_id")
+    if "assigned_to_id" in data or "assigned_to_user" in data:
+        asset.assigned_to_user = assigned_to_user
 
     db.session.add(transfer)
 
@@ -486,7 +568,7 @@ def get_asset(id):
     asset = Asset.query.get_or_404(id)
 
     # Check permissions
-    if not user_has_access_to_department(current_user, asset.department_id):
+    if not user_has_access_to_department(current_user, asset.assigned_to_department):
         return (
             jsonify({"message": "Unauthorized - no access to this asset's department"}),
             403,
@@ -582,6 +664,7 @@ def download_sample_csv():
             "assigned_to_id",
             "status",
             "condition_notes",
+            "location",
         ]
     )
 
@@ -598,6 +681,7 @@ def download_sample_csv():
             "3",
             "active",
             "Good condition",
+            "Office Room 301",
         ]
     )
     writer.writerow(
@@ -612,6 +696,7 @@ def download_sample_csv():
             "4",
             "active",
             "",
+            "Warehouse A, Shelf 5",
         ]
     )
 
@@ -737,10 +822,11 @@ def upload_assets_csv():
                         else None
                     ),
                     purchase_date=purchase_date,
-                    department_id=department_id,
-                    assigned_to_id=assigned_to_id,
+                    assigned_to_department=department_id,
+                    assigned_to_user=assigned_to_id,
                     status=status,
                     condition_notes=row.get("condition_notes"),
+                    location=row.get("location"),
                 )
 
                 db.session.add(asset)
@@ -831,7 +917,7 @@ def mark_asset_inactive(id):
     # Check permissions for managers
     if current_user.role == UserRole.USER:
         managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
-        if asset.department_id not in managed_dept_ids:
+        if asset.assigned_to_department not in managed_dept_ids:
             return (
                 jsonify({"message": "Unauthorized - asset is not in a department you manage"}),
                 403,
@@ -859,18 +945,18 @@ def mark_asset_inactive(id):
 
     # Store old values for audit
     old_status = asset.status.value
-    old_department_id = asset.department_id
-    old_assigned_to_id = asset.assigned_to_id
+    old_department_id = asset.assigned_to_department
+    old_assigned_to_id = asset.assigned_to_user
 
     # Update asset status
     asset.status = AssetStatus[new_status.upper()]
 
     # Only transfer if not already in bad assets department
-    if asset.department_id != bad_dept_id:
+    if asset.assigned_to_department != bad_dept_id:
         # Create transfer record
         transfer = AssetTransfer(
             asset_id=asset.id,
-            from_department_id=asset.department_id,
+            from_department_id=asset.assigned_to_department,
             to_department_id=bad_dept_id,
             assigned_to_id=None,  # Unassign from user
             transferred_by=current_user_id,
@@ -882,10 +968,10 @@ def mark_asset_inactive(id):
         db.session.add(transfer)
 
         # Update asset department
-        asset.department_id = bad_dept_id
+        asset.assigned_to_department = bad_dept_id
 
     # Unassign from user
-    asset.assigned_to_id = None
+    asset.assigned_to_user = None
     asset.condition_notes = data.get("condition_notes", asset.condition_notes)
 
     # Log activity
@@ -916,7 +1002,7 @@ def mark_asset_inactive(id):
         },
         new_values={
             "status": new_status,
-            "department_id": asset.department_id,
+            "department_id": asset.assigned_to_department,
             "assigned_to_id": None,
         },
         details=f"Marked asset {asset.code} as {new_status} and transferred to bad assets department",
@@ -947,7 +1033,7 @@ def propose_asset_for_liquidation(id):
     if current_user.role != UserRole.ADMIN:
         # Check if user is manager of asset's department
         is_manager_of_dept = any(
-            assoc.department_id == asset.department_id and assoc.is_manager
+            assoc.department_id == asset.assigned_to_department and assoc.is_manager
             for assoc in current_user.department_associations
         )
         if not is_manager_of_dept:

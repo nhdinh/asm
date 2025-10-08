@@ -25,12 +25,6 @@ def get_users():
     include_deleted = request.args.get("include_deleted", "false").lower() == "true"
     query = User.query_all(include_deleted=include_deleted)
 
-    # Debug logging
-    from flask import current_app
-    total_users = User.query.count()
-    filtered_users = query.count()
-    current_app.logger.info(f"Total users in DB: {total_users}, After filter: {filtered_users}, include_deleted: {include_deleted}")
-
     # Apply filters
     search = request.args.get("search")
     role = request.args.get("role")
@@ -56,9 +50,6 @@ def get_users():
     if department_id:
         query = query.join(User.departments).filter(Department.id == int(department_id))
 
-    if include_deleted is not None and include_deleted == False:
-        query = query.filter(User.deleted_at is None)
-
     # Apply sorting
     valid_sort_fields = {
         "username": User.username,
@@ -79,11 +70,10 @@ def get_users():
         query = query.order_by(User.created_at.desc())
 
     pagination_result = paginate_query(query, user=current_user)
-    current_app.logger.info(f"Pagination items count: {len(pagination_result.items)}")
 
     # Convert users to dict with error handling
     items = []
-    for user in pagination_result.items:
+    for user in pagination_result['items']:
         try:
             items.append(user.to_dict())
         except Exception as e:
@@ -92,18 +82,117 @@ def get_users():
     response = {
         "items": items,
         "pagination": {
-            "page": pagination_result.page,
-            "per_page": pagination_result.per_page,
-            "total": pagination_result.total,
-            "total_pages": pagination_result.pages,
-            "has_next": pagination_result.has_next,
-            "has_prev": pagination_result.has_prev,
-            "next_page": pagination_result.next_num if pagination_result.has_next else None,
-            "prev_page": pagination_result.prev_num if pagination_result.has_prev else None,
+            "page": pagination_result['page'],
+            "per_page": pagination_result['per_page'],
+            "total": pagination_result['total'],
+            "total_pages": pagination_result['total_pages'],
+            "has_next": pagination_result['has_next'],
+            "has_prev": pagination_result['has_prev'],
+            "next_page": pagination_result['next_page'],
+            "prev_page": pagination_result['prev_page'],
         }
     }
-    current_app.logger.info(f"Returning {len(response.get('items', []))} users in response")
     return jsonify(response)
+
+
+@users_bp.route("", methods=["POST"])
+@jwt_required()
+def create_user():
+    """Create a new user (admin only)"""
+    current_user_id = get_jwt_identity()
+    current_user = User.query.get(current_user_id)
+
+    if current_user.role != UserRole.ADMIN:
+        return jsonify({"message": "Unauthorized"}), 403
+
+    data = request.json
+
+    # Validate required fields
+    if not data.get("username"):
+        return jsonify({"message": "Username is required"}), 400
+    if not data.get("password"):
+        return jsonify({"message": "Password is required"}), 400
+    if not data.get("email"):
+        return jsonify({"message": "Email is required"}), 400
+
+    # Check if username already exists
+    if User.query.filter_by(username=data["username"]).first():
+        return jsonify({"message": "Username already exists"}), 400
+
+    # Check if email already exists
+    if User.query.filter_by(email=data["email"]).first():
+        return jsonify({"message": "Email already exists"}), 400
+
+    # Parse role
+    role = UserRole.USER
+    if data.get("role"):
+        try:
+            role = UserRole[data["role"].upper()]
+        except KeyError:
+            return jsonify({"message": "Invalid role"}), 400
+
+    # Create user
+    user = User(
+        username=data["username"],
+        email=data["email"],
+        fullname=data.get("full_name", ""),
+        role=role
+    )
+    user.set_password(data["password"])
+
+    db.session.add(user)
+    db.session.flush()  # Get user ID before handling departments
+
+    # Handle department assignments
+    if data.get("department_ids"):
+        from models import UserDepartment
+        for dept_id in data["department_ids"]:
+            dept = Department.query.get(dept_id)
+            if dept:
+                # Check if this user should be a manager
+                is_manager = False
+                if data.get("manager_dept_ids") and dept_id in data["manager_dept_ids"]:
+                    is_manager = True
+
+                user_dept = UserDepartment(
+                    user_id=user.id,
+                    department_id=dept_id,
+                    is_manager=is_manager
+                )
+                db.session.add(user_dept)
+
+    # Log activity
+    activity = UserActivity(
+        user_id=current_user_id,
+        username=current_user.username,
+        action="create",
+        entity_type="user",
+        entity_id=user.id,
+        details=f"Created user {user.username}",
+        status=ActivityStatus.SUCCESS,
+    )
+    db.session.add(activity)
+
+    db.session.commit()
+
+    # Audit log
+    audit_logger.log(
+        user_id=current_user_id,
+        username=current_user.username,
+        action="create",
+        entity_type="user",
+        entity_id=user.id,
+        new_values={
+            "username": user.username,
+            "email": user.email,
+            "fullname": user.fullname,
+            "role": user.role.value,
+        },
+        details=f"Created user {user.username}",
+        ip_address=request.remote_addr,
+    )
+
+    return jsonify(user.to_dict()), 201
 
 
 @users_bp.route("/<int:id>", methods=["GET"])
@@ -260,6 +349,61 @@ def delete_user(id):
     )
 
     return "", 204
+
+
+@users_bp.route("/<int:id>/force-logout", methods=["POST"])
+@jwt_required()
+def force_logout(id):
+    """Force a user to logout by changing their password and requiring password change"""
+    current_user_id = get_jwt_identity()
+    current_user = User.query.get(current_user_id)
+
+    if current_user.role != UserRole.ADMIN:
+        return jsonify({"message": "Unauthorized"}), 403
+
+    # Prevent admin from logging out themselves
+    if id == current_user_id:
+        return jsonify({"message": "Cannot force logout yourself"}), 400
+
+    user = User.query.get_or_404(id)
+
+    # Generate a random temporary password
+    import secrets
+    import string
+    temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+
+    # Set new password and force password change
+    user.set_password(temp_password)
+    user.must_change_password = True
+
+    # Log activity
+    activity = UserActivity(
+        user_id=current_user_id,
+        username=current_user.username,
+        action="force_logout",
+        entity_type="user",
+        entity_id=id,
+        details=f"Forced logout for user {user.username}",
+        status=ActivityStatus.SUCCESS,
+    )
+    db.session.add(activity)
+
+    db.session.commit()
+
+    # Audit log
+    audit_logger.log(
+        user_id=current_user_id,
+        username=current_user.username,
+        action="force_logout",
+        entity_type="user",
+        entity_id=id,
+        details=f"Forced logout for user {user.username}",
+        ip_address=request.remote_addr,
+    )
+
+    return jsonify({
+        "message": f"User {user.username} has been logged out and must change password on next login"
+    }), 200
 
 
 @users_bp.route("/<int:id>/reset-password", methods=["POST"])

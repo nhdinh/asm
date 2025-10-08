@@ -21,15 +21,31 @@ def get_my_assets():
             from models import AssetStatus
 
             assets = Asset.query.filter_by(
-                assigned_to_id=current_user_id, status=AssetStatus.ACTIVE
+                assigned_to_user=current_user_id, status=AssetStatus.ACTIVE
             ).all()
         else:
             # Managers show all assets from departments they manage
+            from models import UserDepartment
             managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
             if managed_dept_ids:
-                assets = Asset.query.filter(
-                    Asset.department_id.in_(managed_dept_ids)
-                ).all()
+                query = Asset.query
+                query = query.outerjoin(User, Asset.assigned_to_user == User.id)
+                query = query.outerjoin(UserDepartment, User.id == UserDepartment.user_id)
+                query = query.filter(
+                    db.or_(
+                        # Assets not assigned to any user but in manager's department
+                        db.and_(
+                            Asset.assigned_to_user.is_(None),
+                            Asset.assigned_to_department.in_(managed_dept_ids)
+                        ),
+                        # Assets assigned to users in manager's departments
+                        db.and_(
+                            Asset.assigned_to_user.isnot(None),
+                            UserDepartment.department_id.in_(managed_dept_ids)
+                        )
+                    )
+                )
+                assets = query.all()
             else:
                 assets = []
     else:
@@ -50,14 +66,30 @@ def get_my_stats():
         is_manager = any(assoc.is_manager for assoc in current_user.department_associations)
         if not is_manager:
             # Regular users see only their assigned assets
-            assets = Asset.query.filter_by(assigned_to_id=current_user_id).all()
+            assets = Asset.query.filter_by(assigned_to_user=current_user_id).all()
         else:
             # Managers see assets from departments they manage
+            from models import UserDepartment
             managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
             if managed_dept_ids:
-                assets = Asset.query.filter(
-                    Asset.department_id.in_(managed_dept_ids)
-                ).all()
+                query = Asset.query
+                query = query.outerjoin(User, Asset.assigned_to_user == User.id)
+                query = query.outerjoin(UserDepartment, User.id == UserDepartment.user_id)
+                query = query.filter(
+                    db.or_(
+                        # Assets not assigned to any user but in manager's department
+                        db.and_(
+                            Asset.assigned_to_user.is_(None),
+                            Asset.assigned_to_department.in_(managed_dept_ids)
+                        ),
+                        # Assets assigned to users in manager's departments
+                        db.and_(
+                            Asset.assigned_to_user.isnot(None),
+                            UserDepartment.department_id.in_(managed_dept_ids)
+                        )
+                    )
+                )
+                assets = query.all()
             else:
                 assets = []
     else:

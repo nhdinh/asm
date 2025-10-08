@@ -29,6 +29,9 @@
         <a href="{{ url_for('audit_logs') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint == 'audit_logs' %}active-menu{% endif %}">
             📝 Nhật Ký Audit
         </a>
+        <a href="{{ url_for('sessions') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint == 'sessions' %}active-menu{% endif %}">
+            🔐 Phiên Đăng Nhập
+        </a>
         {% endif %}
         <a href="{{ url_for('reports') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'reports' in request.endpoint %}active-menu{% endif %}">
             📊 Báo Cáo

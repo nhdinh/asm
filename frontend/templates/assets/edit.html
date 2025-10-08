@@ -82,6 +82,12 @@
                 <textarea name="condition_notes" rows="3" placeholder="VD: Bị xước ở góc trên bên trái, màn hình hoạt động tốt..."
                           class="border rounded px-3 py-2 w-full">{{ asset.condition_notes or '' }}</textarea>
             </div>
+            <div class="col-span-2">
+                <label class="block text-sm font-medium mb-1">Vị Trí</label>
+                <input type="text" name="location" class="border rounded px-3 py-2 w-full"
+                       placeholder="VD: Tòa nhà A, Phòng 301, Kệ B3..."
+                       value="{{ asset.location or '' }}">
+            </div>
         </div>
 
         <div class="mt-6 flex gap-2">

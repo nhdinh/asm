@@ -18,8 +18,9 @@ db = SQLAlchemy()
 jwt = JWTManager()
 migrate = Migrate()
 
-# Import audit logger
+# Import audit logger and session manager
 from audit_logger import audit_logger
+from session_manager import session_manager
 
 db_user = None
 db_password = None
@@ -63,6 +64,7 @@ def create_app():
     jwt.init_app(app)
     migrate.init_app(app, db)
     audit_logger.init_app(app)
+    session_manager.init_app(app)
 
     # Store Redis client in app extensions for email queue access
     app.extensions['redis'] = audit_logger.redis_client
@@ -98,6 +100,7 @@ def create_app():
     from routes.categories import category_bp
     from routes.email_settings import email_settings_bp
     from routes.trash import trash_bp
+    from routes.sessions import sessions_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(dept_bp, url_prefix="/api/departments")
@@ -110,6 +113,7 @@ def create_app():
     app.register_blueprint(category_bp, url_prefix="/api/categories")
     app.register_blueprint(email_settings_bp, url_prefix="/api/email-settings")
     app.register_blueprint(trash_bp, url_prefix="/api/trash")
+    app.register_blueprint(sessions_bp, url_prefix="/api/sessions")
 
     # Health check endpoint
     @app.route("/api/health")

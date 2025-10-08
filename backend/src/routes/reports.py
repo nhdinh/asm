@@ -32,13 +32,46 @@ def asset_report():
 
     # Apply permission filter - managers only see assets from departments they manage
     if current_user.role == UserRole.USER:
+        from models import UserDepartment
         managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
         if managed_dept_ids:
-            query = query.filter(Asset.department_id.in_(managed_dept_ids))
+            query = query.outerjoin(User, Asset.assigned_to_user == User.id)
+            query = query.outerjoin(UserDepartment, User.id == UserDepartment.user_id)
+            query = query.filter(
+                db.or_(
+                    # Assets not assigned to any user but in manager's department
+                    db.and_(
+                        Asset.assigned_to_user.is_(None),
+                        Asset.assigned_to_department.in_(managed_dept_ids)
+                    ),
+                    # Assets assigned to users in manager's departments
+                    db.and_(
+                        Asset.assigned_to_user.isnot(None),
+                        UserDepartment.department_id.in_(managed_dept_ids)
+                    )
+                )
+            )
 
     # Apply filters
     if department_id:
-        query = query.filter_by(department_id=department_id)
+        from models import UserDepartment
+        if current_user.role != UserRole.USER:
+            query = query.outerjoin(User, Asset.assigned_to_user == User.id)
+            query = query.outerjoin(UserDepartment, User.id == UserDepartment.user_id)
+        query = query.filter(
+            db.or_(
+                # Assets not assigned to any user but in this department
+                db.and_(
+                    Asset.assigned_to_user.is_(None),
+                    Asset.assigned_to_department == department_id
+                ),
+                # Assets assigned to users in this department
+                db.and_(
+                    Asset.assigned_to_user.isnot(None),
+                    UserDepartment.department_id == department_id
+                )
+            )
+        )
     if status:
         query = query.filter_by(status=AssetStatus[status.upper()])
     if category:
@@ -84,7 +117,7 @@ def single_asset_report(id):
     asset = Asset.query.get_or_404(id)
 
     # Check permissions
-    if not user_has_access_to_department(current_user, asset.department_id):
+    if not user_has_access_to_department(current_user, asset.assigned_to_department):
         return jsonify({"message": "Unauthorized - no access to this asset's department"}), 403
 
     # Get transfer history
@@ -194,16 +227,16 @@ def dashboard_stats():
         user_dept_ids = [dept.id for dept in current_user.departments]
 
         if user_dept_ids:
-            total_assets = Asset.query.filter(Asset.department_id.in_(user_dept_ids)).count()
+            total_assets = Asset.query.filter(Asset.assigned_to_department.in_(user_dept_ids)).count()
 
             # Calculate total value for manager's departments
             total_value = db.session.query(func.sum(Asset.purchase_value)).filter(
-                Asset.department_id.in_(user_dept_ids)
+                Asset.assigned_to_department.in_(user_dept_ids)
             ).scalar() or 0
 
             assets_by_status = (
                 db.session.query(Asset.status, func.count(Asset.id))
-                .filter(Asset.department_id.in_(user_dept_ids))
+                .filter(Asset.assigned_to_department.in_(user_dept_ids))
                 .group_by(Asset.status)
                 .all()
             )
@@ -215,7 +248,7 @@ def dashboard_stats():
                     func.count(Asset.id),
                     func.sum(Asset.purchase_value)
                 )
-                .filter(Asset.department_id.in_(user_dept_ids))
+                .filter(Asset.assigned_to_department.in_(user_dept_ids))
                 .group_by(Asset.category)
                 .all()
             )

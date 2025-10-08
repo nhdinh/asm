@@ -420,9 +420,13 @@ def assets():
 
 @app.route("/departments", methods=["GET", "POST"])
 @login_required
-@admin_required
 def departments():
     if request.method == "POST":
+        # Only admin can create departments
+        if "user" not in session or session["user"].get("role") != UserRole.ADMIN:
+            flash("Bạn không có quyền tạo phòng ban mới.", "danger")
+            return redirect(url_for("departments"))
+
         name = request.form["name"]
         description = request.form["description"]
 
@@ -457,10 +461,17 @@ def departments():
             params["search"] = search
 
         departments = extract_items(client.get_departments(**params))
-        users = extract_items(client.get_users())
+
+        # Only admin needs users list (for creating departments)
+        users = []
+        current_user = session.get("user")
+        if current_user and current_user.get("role") == UserRole.ADMIN:
+            try:
+                users = extract_items(client.get_users())
+            except Exception as e:
+                app.logger.warning(f"Could not load users: {e}")
 
         # Get current user's managed department IDs
-        current_user = session.get("user")
         managed_dept_ids = []
         if current_user and current_user.get("departments"):
             managed_dept_ids = [
@@ -468,6 +479,12 @@ def departments():
                 for dept in current_user["departments"]
                 if dept.get("is_manager", False)
             ]
+
+        # Sort departments: managed departments first, then others
+        if managed_dept_ids:
+            managed_depts = [d for d in departments if d["id"] in managed_dept_ids]
+            other_depts = [d for d in departments if d["id"] not in managed_dept_ids]
+            departments = managed_depts + other_depts
 
         # Pass filters to template
         filters = {"sort_by": sort_by, "sort_order": sort_order, "search": search}
@@ -646,28 +663,15 @@ def edit_user(id):
     return render_template("users/edit.html", user=user, departments=departments)
 
 
-@app.route("/users/<int:id>/delete", methods=["POST"])
-@login_required
-@admin_required
-def delete_user(id):
-    try:
-        client = get_api_client()
-        client.delete_user(id)
-        flash("Xóa người dùng thành công!", "success")
-    except Exception as e:
-        app.logger.exception(e)
-        flash(f"Lỗi: Không thể xóa người dùng. {str(e)}", "danger")
-
-    return redirect(url_for("users"))
-
-
 @app.route("/users/<int:id>/reset-password", methods=["POST"])
 @login_required
 @admin_required
 def reset_user_password(id):
     try:
         data = request.get_json()
-        if not data or not data.get("password"):
+        # Accept both 'password' and 'new_password' for compatibility
+        password = data.get("password") or data.get("new_password")
+        if not data or not password:
             return jsonify({"message": "Password is required"}), 400
 
         app.logger.info(f"Resetting password for user {id}")
@@ -677,14 +681,31 @@ def reset_user_password(id):
         result = client.reset_user_password(
             id,
             {
-                "password": data["password"],
-                "must_change_password": data.get("must_change_password", True),
+                "password": password,
+                "must_change_password": data.get("must_change_password", False),
             },
         )
         return jsonify(result), 200
     except Exception as e:
         app.logger.exception(e)
         return jsonify({"message": f"Không thể đặt lại mật khẩu: {str(e)}"}), 500
+
+
+@app.route("/users/<int:id>", methods=["DELETE"])
+@login_required
+@admin_required
+def delete_user(id):
+    try:
+        # Prevent admin from deleting themselves
+        if id == session.get("user", {}).get("id"):
+            return jsonify({"message": "Không thể xóa chính mình"}), 400
+
+        client = get_api_client()
+        client.delete_user(id)
+        return jsonify({"message": "Đã xóa người dùng thành công"}), 200
+    except Exception as e:
+        app.logger.exception(e)
+        return jsonify({"message": f"Không thể xóa người dùng: {str(e)}"}), 500
 
 
 @app.route("/users/sample-csv")
@@ -951,6 +972,206 @@ def delete_asset(id):
     return redirect(url_for("assets"))
 
 
+@app.route("/assets/bulk-export", methods=["POST"])
+@login_required
+def bulk_export_assets():
+    """Export multiple selected assets to Excel"""
+    try:
+        data = request.json
+        asset_ids = data.get('asset_ids', [])
+
+        if not asset_ids:
+            return jsonify({"message": "No assets selected"}), 400
+
+        client = get_api_client()
+
+        # Collect all asset data
+        assets_data = []
+        for asset_id in asset_ids:
+            try:
+                asset = client.get_asset(asset_id)
+                assets_data.append(asset)
+            except Exception as e:
+                app.logger.warning(f"Could not fetch asset {asset_id}: {str(e)}")
+
+        if not assets_data:
+            return jsonify({"message": "Could not fetch asset data"}), 500
+
+        # Create Excel file
+        from io import BytesIO
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from datetime import datetime
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Tài sản"
+
+        # Header
+        headers = ["Mã tài sản", "Tên tài sản", "Danh mục", "Trạng thái", "Phòng ban",
+                   "Người sử dụng", "Vị trí", "Giá trị (VND)", "Ngày mua", "Ghi chú"]
+        ws.append(headers)
+
+        # Style header
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        # Add data
+        status_map = {
+            'ACTIVE': 'Đang sử dụng',
+            'DAMAGED': 'Hư hỏng',
+            'DISPOSED': 'Đã thanh lý'
+        }
+
+        for asset in assets_data:
+            ws.append([
+                asset.get('code', ''),
+                asset.get('name', ''),
+                asset.get('category', ''),
+                status_map.get(asset.get('status', ''), asset.get('status', '')),
+                asset.get('department_name', ''),
+                asset.get('assigned_user_name', ''),
+                asset.get('location', ''),
+                asset.get('value', ''),
+                asset.get('purchase_date', ''),
+                asset.get('notes', '')
+            ])
+
+        # Auto-size columns
+        for column in ws.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            ws.column_dimensions[column_letter].width = adjusted_width
+
+        # Save to BytesIO
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"tai_san_selected_{timestamp}.xlsx"
+
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        app.logger.exception(e)
+        return jsonify({"message": f"Export error: {str(e)}"}), 500
+
+
+@app.route("/assets/bulk-delete", methods=["POST"])
+@login_required
+@non_viewer_required
+def bulk_delete_assets():
+    """Delete multiple assets"""
+    try:
+        data = request.json
+        asset_ids = data.get('asset_ids', [])
+
+        if not asset_ids:
+            return jsonify({"message": "No assets selected"}), 400
+
+        client = get_api_client()
+
+        success_count = 0
+        failed_count = 0
+        errors = []
+
+        for asset_id in asset_ids:
+            try:
+                client.delete_asset(asset_id)
+                success_count += 1
+            except Exception as e:
+                failed_count += 1
+                errors.append(f"Asset {asset_id}: {str(e)}")
+                app.logger.warning(f"Failed to delete asset {asset_id}: {str(e)}")
+
+        return jsonify({
+            "success": True,
+            "message": f"Deleted {success_count} asset(s). Failed: {failed_count}",
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "errors": errors if errors else None
+        }), 200
+
+    except Exception as e:
+        app.logger.exception(e)
+        return jsonify({"message": f"Delete error: {str(e)}"}), 500
+
+
+@app.route("/assets/bulk-edit", methods=["POST"])
+@login_required
+@non_viewer_required
+def bulk_edit_assets():
+    """Edit multiple assets at once"""
+    try:
+        data = request.json
+        asset_ids = data.get('asset_ids', [])
+        updates = data.get('updates', {})
+
+        if not asset_ids:
+            return jsonify({"message": "No assets selected"}), 400
+
+        if not updates:
+            return jsonify({"message": "No updates provided"}), 400
+
+        client = get_api_client()
+
+        success_count = 0
+        failed_count = 0
+        errors = []
+
+        for asset_id in asset_ids:
+            try:
+                # Prepare update payload
+                update_data = {}
+
+                if 'category' in updates:
+                    update_data['category'] = updates['category']
+
+                if 'department_id' in updates:
+                    update_data['department_id'] = updates['department_id']
+
+                if 'status' in updates:
+                    update_data['status'] = updates['status']
+
+                # Update asset via API
+                client.update_asset(asset_id, update_data)
+                success_count += 1
+
+            except Exception as e:
+                failed_count += 1
+                errors.append(f"Asset {asset_id}: {str(e)}")
+                app.logger.warning(f"Failed to update asset {asset_id}: {str(e)}")
+
+        return jsonify({
+            "success": True,
+            "message": f"Updated {success_count} asset(s). Failed: {failed_count}",
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "errors": errors if errors else None
+        }), 200
+
+    except Exception as e:
+        app.logger.exception(e)
+        return jsonify({"message": f"Update error: {str(e)}"}), 500
+
+
 @app.route("/assets/<int:id>/mark-inactive", methods=["POST"])
 @login_required
 @non_viewer_required
@@ -1010,22 +1231,39 @@ def department_detail(id):
 
 @app.route("/departments/<int:id>/edit", methods=["GET", "POST"])
 @login_required
-@admin_required
 def edit_department(id):
+    # Check permissions: Admin can edit all, Manager can only edit their managed departments
+    current_user = session.get("user")
+
+    if current_user.get("role") != UserRole.ADMIN:
+        # Check if user is a manager of this department
+        managed_dept_ids = [
+            dept["id"]
+            for dept in current_user.get("departments", [])
+            if dept.get("is_manager", False)
+        ]
+
+        if id not in managed_dept_ids:
+            flash("Bạn không có quyền chỉnh sửa phòng ban này.", "danger")
+            return redirect(url_for("departments"))
+
     if request.method == "POST":
         try:
             client = get_api_client()
 
-            # Get user IDs and manager IDs from form
-            user_ids = request.form.getlist("user_ids")
-            manager_ids = request.form.getlist("manager_ids")
-
+            # Build department data
             department_data = {
                 "name": request.form["name"],
                 "description": request.form.get("description", ""),
-                "user_ids": [int(u) for u in user_ids if u],
-                "manager_ids": [int(m) for m in manager_ids if m and m.is_manager],
             }
+
+            # Only admin can update user assignments
+            current_user = session.get("user")
+            if current_user and current_user.get("role") == UserRole.ADMIN:
+                user_ids = request.form.getlist("user_ids")
+                manager_ids = request.form.getlist("manager_ids")
+                department_data["user_ids"] = [int(u) for u in user_ids if u]
+                department_data["manager_ids"] = [int(m) for m in manager_ids]
 
             client.update_department(id, department_data)
             flash("Cập nhật phòng ban thành công", "success")
@@ -1037,17 +1275,22 @@ def edit_department(id):
     try:
         client = get_api_client()
         department = client.get_department(id)
-        users_response = client.get_users()
-        users = extract_items(users_response)
-        app.logger.info(f"Department edit: got {len(users)} users")
-        if users:
-            app.logger.info(f"First user sample: {users[0]}")
+
+        # Only admin needs users list (for assigning users to department)
+        users = department["users"]
+        manager_ids = department["manager_ids"]
+        current_user = session.get("user")
     except Exception as e:
         app.logger.exception(e)
         flash("Không thể tải thông tin phòng ban", "danger")
         return redirect(url_for("departments"))
 
-    return render_template("departments/edit.html", department=department, users=users)
+    return render_template(
+        "departments/edit.html",
+        department=department,
+        users=users,
+        manager_ids=manager_ids,
+    )
 
 
 @app.route("/departments/<int:id>/delete", methods=["POST"])
@@ -1782,6 +2025,77 @@ def delete_category(id):
         flash(f"Không thể xóa loại tài sản: {str(e)}", "danger")
 
     return redirect(url_for("categories"))
+
+
+# =====================================
+# Sessions Routes (Admin Only)
+# =====================================
+@app.route("/sessions")
+@login_required
+@admin_required
+def sessions():
+    """View all active user sessions"""
+    try:
+        client = get_api_client()
+
+        # Get sessions from API
+        response = client.session.get(f"{client.base_url}/sessions")
+        sessions_data = response.json()
+
+        # Get session stats
+        stats_response = client.session.get(f"{client.base_url}/sessions/stats")
+        stats = stats_response.json()
+
+        return render_template(
+            "sessions/list.html",
+            sessions=sessions_data.get("sessions", []),
+            stats=stats,
+        )
+    except Exception as e:
+        app.logger.exception(e)
+        flash(f"Không thể tải danh sách phiên đăng nhập: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+
+@app.route("/sessions/<id>/terminate", methods=["POST"])
+@login_required
+@admin_required
+def terminate_session(id):
+    """Terminate a specific session"""
+    try:
+        client = get_api_client()
+        response = client.session.delete(f"{client.base_url}/sessions/{id}")
+
+        if response.status_code == 200:
+            flash("Đã đăng xuất phiên đăng nhập thành công", "success")
+        else:
+            flash("Không thể đăng xuất phiên đăng nhập", "danger")
+    except Exception as e:
+        app.logger.exception(e)
+        flash(f"Lỗi: {str(e)}", "danger")
+
+    return redirect(url_for("sessions"))
+
+
+@app.route("/sessions/user/<int:user_id>/terminate-all", methods=["POST"])
+@login_required
+@admin_required
+def terminate_user_sessions(user_id):
+    """Terminate all sessions for a specific user"""
+    try:
+        client = get_api_client()
+        response = client.session.delete(f"{client.base_url}/sessions/user/{user_id}")
+
+        if response.status_code == 200:
+            data = response.json()
+            flash(data.get("message", "Đã đăng xuất tất cả phiên đăng nhập"), "success")
+        else:
+            flash("Không thể đăng xuất các phiên đăng nhập", "danger")
+    except Exception as e:
+        app.logger.exception(e)
+        flash(f"Lỗi: {str(e)}", "danger")
+
+    return redirect(url_for("sessions"))
 
 
 # Error handlers

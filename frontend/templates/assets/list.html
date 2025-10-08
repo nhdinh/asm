@@ -4,6 +4,33 @@
 
 {% block content %}
 <div class="bg-white rounded-lg shadow p-6">
+    <!-- Bulk Actions Toolbar -->
+    <div id="bulkActionsBar" class="hidden mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <span class="font-semibold text-blue-800">
+                    <span id="selectedCount">0</span> tài sản đã chọn
+                </span>
+                <button type="button" onclick="clearSelection()" class="text-sm text-blue-600 hover:text-blue-800 underline">
+                    Bỏ chọn tất cả
+                </button>
+            </div>
+            <div class="flex gap-2">
+                {% if session.user and session.user.role == 'ADMIN' %}
+                <button type="button" onclick="openBulkEditModal()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
+                    ✏️ Sửa
+                </button>
+                <button type="button" onclick="bulkExport()" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors">
+                    📥 Xuất Excel
+                </button>
+                <button type="button" onclick="bulkDelete()" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors">
+                    🗑️ Xóa
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
     <!-- Filters -->
     <form method="GET" id="filterForm" class="mb-4 bg-gray-50 p-4 rounded-lg">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -103,6 +130,9 @@
     <table class="w-full">
         <thead class="bg-gray-100">
             <tr>
+                <th class="px-4 py-2 text-center w-12">
+                    <input type="checkbox" id="selectAll" class="w-4 h-4 cursor-pointer" title="Chọn tất cả">
+                </th>
                 <th class="px-4 py-2 text-left">
                     <a href="?search={{ filters.search or '' }}&department_id={{ filters.department_id or '' }}&status={{ filters.status or '' }}&category={{ filters.category or '' }}&show_inactive={{ filters.show_inactive or '' }}&sort_by=code&sort_order={% if filters.sort_by == 'code' and filters.sort_order == 'asc' %}desc{% else %}asc{% endif %}"
                        class="hover:text-blue-600 flex items-center">
@@ -141,10 +171,11 @@
                 </th>
                 <th class="px-4 py-2 text-left">Phòng Ban</th>
                 <th class="px-4 py-2 text-left">Được cấp cho</th>
+                <th class="px-4 py-2 text-left">Vị Trí</th>
                 <th class="px-4 py-2 text-left">
                     <a href="?search={{ filters.search or '' }}&department_id={{ filters.department_id or '' }}&status={{ filters.status or '' }}&category={{ filters.category or '' }}&show_inactive={{ filters.show_inactive or '' }}&sort_by=purchase_value&sort_order={% if filters.sort_by == 'purchase_value' and filters.sort_order == 'asc' %}desc{% else %}asc{% endif %}"
                        class="hover:text-blue-600 flex items-center">
-                        Giá Trị
+                        Giá Trị (VNĐ)
                         {% if filters.sort_by == 'purchase_value' %}
                             <span class="ml-1">{% if filters.sort_order == 'asc' %}▲{% else %}▼{% endif %}</span>
                         {% endif %}
@@ -156,6 +187,9 @@
         <tbody>
             {% for asset in assets %}
             <tr class="border-b hover:bg-gray-50">
+                <td class="px-4 py-3 text-center">
+                    <input type="checkbox" class="asset-checkbox w-4 h-4 cursor-pointer" value="{{ asset.id }}" data-code="{{ asset.code }}">
+                </td>
                 <td class="px-4 py-3">{{ asset.code }}</td>
                 <td class="px-4 py-3">
                     <a href="{{ url_for('asset_detail', id=asset.id) }}"
@@ -198,7 +232,14 @@
                         <span class="text-gray-400 italic text-sm">Chưa cấp</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3">{{ "{:,.0f}".format(asset.purchase_value or asset.value or 0) }} VNĐ</td>
+                <td class="px-4 py-3">
+                    {% if asset.location %}
+                        <span class="text-gray-700 text-sm">📍 {{ asset.location }}</span>
+                    {% else %}
+                        <span class="text-gray-400 italic text-sm">-</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-right">{{ "{:,.0f}".format(asset.purchase_value or asset.value or 0) }}</td>
                 <td class="px-4 py-3">
                     <div class="flex gap-1">
                         <a href="{{ url_for('asset_detail', id=asset.id) }}"
@@ -260,6 +301,66 @@
 
     <!-- Pagination -->
     {% include 'components/pagination.html' %}
+</div>
+
+<!-- Bulk Edit Modal -->
+<div id="bulkEditModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-full max-w-md">
+        <h3 class="text-lg font-bold mb-4">Sửa Hàng Loạt Tài Sản</h3>
+        <p class="text-sm text-gray-600 mb-4">
+            Sửa thông tin cho <span id="bulkEditCount" class="font-semibold">0</span> tài sản đã chọn
+        </p>
+
+        <form id="bulkEditForm">
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">
+                    <input type="checkbox" id="updateCategory" class="mr-2">
+                    Loại tài sản
+                </label>
+                <input type="text" id="categoryInput"
+                       class="border rounded px-3 py-2 w-full disabled:bg-gray-100"
+                       placeholder="Nhập loại tài sản" disabled>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">
+                    <input type="checkbox" id="updateDepartment" class="mr-2">
+                    Phòng ban
+                </label>
+                <select id="departmentSelect"
+                        class="border rounded px-3 py-2 w-full disabled:bg-gray-100" disabled>
+                    <option value="">-- Chọn phòng ban --</option>
+                    {% for dept in departments %}
+                    <option value="{{ dept.id }}">{{ dept.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">
+                    <input type="checkbox" id="updateStatus" class="mr-2">
+                    Trạng thái
+                </label>
+                <select id="statusSelect"
+                        class="border rounded px-3 py-2 w-full disabled:bg-gray-100" disabled>
+                    <option value="">-- Chọn trạng thái --</option>
+                    <option value="ACTIVE">Đang sử dụng</option>
+                    <option value="DAMAGED">Hư hỏng</option>
+                    <option value="DISPOSED">Đã thanh lý</option>
+                </select>
+            </div>
+
+            <div class="flex gap-2">
+                <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                    Áp Dụng
+                </button>
+                <button type="button" onclick="closeBulkEditModal()"
+                        class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                    Hủy
+                </button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <script>
@@ -424,5 +525,244 @@ function showMarkInactiveModal(assetId) {
         });
     };
 }
+
+// ============================================
+// Bulk Actions Functionality
+// ============================================
+
+// Select All / Deselect All
+document.getElementById('selectAll').addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.asset-checkbox');
+    checkboxes.forEach(cb => cb.checked = this.checked);
+    updateBulkActionsBar();
+});
+
+// Update when individual checkbox changes
+document.querySelectorAll('.asset-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('change', updateBulkActionsBar);
+});
+
+// Update bulk actions toolbar visibility and count
+function updateBulkActionsBar() {
+    const checkboxes = document.querySelectorAll('.asset-checkbox:checked');
+    const count = checkboxes.length;
+    const bar = document.getElementById('bulkActionsBar');
+    const countSpan = document.getElementById('selectedCount');
+
+    countSpan.textContent = count;
+
+    if (count > 0) {
+        bar.classList.remove('hidden');
+    } else {
+        bar.classList.add('hidden');
+    }
+
+    // Update "select all" checkbox state
+    const allCheckboxes = document.querySelectorAll('.asset-checkbox');
+    const selectAllCheckbox = document.getElementById('selectAll');
+    selectAllCheckbox.checked = count === allCheckboxes.length && count > 0;
+}
+
+// Clear selection
+function clearSelection() {
+    document.querySelectorAll('.asset-checkbox').forEach(cb => cb.checked = false);
+    document.getElementById('selectAll').checked = false;
+    updateBulkActionsBar();
+}
+
+// Get selected asset IDs
+function getSelectedAssetIds() {
+    const checkboxes = document.querySelectorAll('.asset-checkbox:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+// Bulk Export
+function bulkExport() {
+    const assetIds = getSelectedAssetIds();
+    if (assetIds.length === 0) {
+        alert('Vui lòng chọn ít nhất một tài sản');
+        return;
+    }
+
+    // Send export request
+    fetch('/assets/bulk-export', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ asset_ids: assetIds })
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.blob();
+        }
+        return response.json().then(err => {
+            throw new Error(err.message || 'Không thể xuất tài sản');
+        });
+    })
+    .then(blob => {
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `tai_san_selected_${Date.now()}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+
+        clearSelection();
+    })
+    .catch(error => {
+        alert('Lỗi: ' + error.message);
+    });
+}
+
+// Bulk Delete
+function bulkDelete() {
+    const assetIds = getSelectedAssetIds();
+    if (assetIds.length === 0) {
+        alert('Vui lòng chọn ít nhất một tài sản');
+        return;
+    }
+
+    const codes = Array.from(document.querySelectorAll('.asset-checkbox:checked'))
+        .map(cb => cb.getAttribute('data-code'))
+        .join(', ');
+
+    if (!confirm(`Bạn có chắc chắn muốn xóa ${assetIds.length} tài sản?\n\nMã tài sản: ${codes}`)) {
+        return;
+    }
+
+    // Send delete request
+    fetch('/assets/bulk-delete', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ asset_ids: assetIds })
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.json();
+        }
+        return response.json().then(err => {
+            throw new Error(err.message || 'Không thể xóa tài sản');
+        });
+    })
+    .then(data => {
+        alert(`Đã xóa thành công ${data.success_count} tài sản`);
+        location.reload();
+    })
+    .catch(error => {
+        alert('Lỗi: ' + error.message);
+    });
+}
+
+// Bulk Edit Modal Functions
+function openBulkEditModal() {
+    const assetIds = getSelectedAssetIds();
+    if (assetIds.length === 0) {
+        alert('Vui lòng chọn ít nhất một tài sản');
+        return;
+    }
+
+    document.getElementById('bulkEditCount').textContent = assetIds.length;
+    document.getElementById('bulkEditModal').classList.remove('hidden');
+}
+
+function closeBulkEditModal() {
+    document.getElementById('bulkEditModal').classList.add('hidden');
+    // Reset form
+    document.getElementById('bulkEditForm').reset();
+    document.getElementById('updateCategory').checked = false;
+    document.getElementById('updateDepartment').checked = false;
+    document.getElementById('updateStatus').checked = false;
+    document.getElementById('categoryInput').disabled = true;
+    document.getElementById('departmentSelect').disabled = true;
+    document.getElementById('statusSelect').disabled = true;
+}
+
+// Enable/disable inputs based on checkboxes
+document.getElementById('updateCategory').addEventListener('change', function() {
+    document.getElementById('categoryInput').disabled = !this.checked;
+});
+
+document.getElementById('updateDepartment').addEventListener('change', function() {
+    document.getElementById('departmentSelect').disabled = !this.checked;
+});
+
+document.getElementById('updateStatus').addEventListener('change', function() {
+    document.getElementById('statusSelect').disabled = !this.checked;
+});
+
+// Handle bulk edit form submission
+document.getElementById('bulkEditForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const assetIds = getSelectedAssetIds();
+    const updates = {};
+
+    // Check which fields to update
+    if (document.getElementById('updateCategory').checked) {
+        const category = document.getElementById('categoryInput').value.trim();
+        if (!category) {
+            alert('Vui lòng nhập loại tài sản');
+            return;
+        }
+        updates.category = category;
+    }
+
+    if (document.getElementById('updateDepartment').checked) {
+        const deptId = document.getElementById('departmentSelect').value;
+        if (!deptId) {
+            alert('Vui lòng chọn phòng ban');
+            return;
+        }
+        updates.department_id = parseInt(deptId);
+    }
+
+    if (document.getElementById('updateStatus').checked) {
+        const status = document.getElementById('statusSelect').value;
+        if (!status) {
+            alert('Vui lòng chọn trạng thái');
+            return;
+        }
+        updates.status = status;
+    }
+
+    if (Object.keys(updates).length === 0) {
+        alert('Vui lòng chọn ít nhất một trường để cập nhật');
+        return;
+    }
+
+    // Send bulk edit request
+    fetch('/assets/bulk-edit', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            asset_ids: assetIds,
+            updates: updates
+        })
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.json();
+        }
+        return response.json().then(err => {
+            throw new Error(err.message || 'Không thể cập nhật tài sản');
+        });
+    })
+    .then(data => {
+        alert(`Đã cập nhật thành công ${data.success_count} tài sản`);
+        closeBulkEditModal();
+        location.reload();
+    })
+    .catch(error => {
+        alert('Lỗi: ' + error.message);
+    });
+});
 </script>
 {% endblock %}

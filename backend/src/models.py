@@ -131,7 +131,10 @@ class Department(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     deleted_at = db.Column(db.DateTime, nullable=True)
 
-    assets = db.relationship("Asset", backref="department", lazy="dynamic")
+    # Relationship to assets - using foreign_keys to avoid ambiguity
+    assets = db.relationship(
+        "Asset", foreign_keys="Asset.assigned_to_department", lazy="dynamic"
+    )
 
     # Association object relationship
     user_associations = db.relationship(
@@ -183,6 +186,7 @@ class Department(db.Model):
 
         # Get managers list (users with MANAGER role in this department)
         managers_list = self.managers(include_deleted)
+        manager_ids = [m.id for m in managers_list]
 
         result = {
             "id": self.id,
@@ -199,19 +203,12 @@ class Department(db.Model):
             "total_value": total_value,
         }
 
-        if include_deleted:
-            result["managers"] = [
-                {"id": m.id, "fullname": m.fullname, "username": m.username}
-                for m in managers_list
-            ]
-        else:
-            result["managers"] = (
-                [
-                    {"id": m.id, "fullname": m.fullname, "username": m.username}
-                    for m in managers_list
-                    if (not include_deleted and m.deleted_at is None)
-                ],
-            )
+        result["managers"] = [
+            {"id": m.id, "fullname": m.fullname, "username": m.username}
+            for m in managers_list
+        ]
+
+        result["manager_ids"] = manager_ids
 
         if include_details:
             # Include users list
@@ -221,6 +218,9 @@ class Department(db.Model):
                     "username": user.username,
                     "email": user.email,
                     "role": user.role.value,
+                    "fullname": user.fullname,
+                    "is_manager": user.id in manager_ids,
+                    "departments": [self.id],
                 }
                 for user in self.users(include_deleted).all()
             ]
@@ -266,15 +266,22 @@ class Asset(db.Model):
     )  # New foreign key
     purchase_value = db.Column(db.Float)
     purchase_date = db.Column(db.Date)
-    department_id = db.Column(
-        db.Integer, db.ForeignKey("departments.id"), nullable=False
-    )
-    status = db.Column(db.Enum(AssetStatus), default=AssetStatus.ACTIVE)
 
-    # New fields for asset assignment and condition
-    assigned_to_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    # Asset assignment logic:
+    # - If both NULL: only ADMIN can access
+    # - If only assigned_to_department: ADMIN and department managers can access
+    # - If assigned_to_user: asset belongs to user's department(s)
+    #   * If user has 1 department: auto-assign to that department
+    #   * If user has multiple departments: must explicitly set assigned_to_department
+    assigned_to_user = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    assigned_to_department = db.Column(
+        db.Integer, db.ForeignKey("departments.id"), nullable=True
+    )
+
+    status = db.Column(db.Enum(AssetStatus), default=AssetStatus.ACTIVE)
     condition_notes = db.Column(db.Text)
     propose_for_liquidation = db.Column(db.Boolean, default=False, nullable=False)
+    location = db.Column(db.String(255), nullable=True)  # Physical location of the asset
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
@@ -283,7 +290,39 @@ class Asset(db.Model):
     deleted_at = db.Column(db.DateTime, nullable=True)
 
     transfers = db.relationship("AssetTransfer", backref="asset", lazy="dynamic")
-    assigned_to = db.relationship("User", foreign_keys=[assigned_to_id])
+    assigned_user = db.relationship("User", foreign_keys=[assigned_to_user])
+    assigned_department = db.relationship(
+        "Department", foreign_keys=[assigned_to_department]
+    )
+
+    # Backward compatibility properties
+    @property
+    def department_id(self):
+        """Backward compatibility: department_id maps to assigned_to_department"""
+        return self.assigned_to_department
+
+    @department_id.setter
+    def department_id(self, value):
+        self.assigned_to_department = value
+
+    @property
+    def department(self):
+        """Backward compatibility: department relationship"""
+        return self.assigned_department
+
+    @property
+    def assigned_to_id(self):
+        """Backward compatibility: assigned_to_id maps to assigned_to_user"""
+        return self.assigned_to_user
+
+    @assigned_to_id.setter
+    def assigned_to_id(self, value):
+        self.assigned_to_user = value
+
+    @property
+    def assigned_to(self):
+        """Backward compatibility: assigned_to relationship"""
+        return self.assigned_user
 
     @classmethod
     def query_all(cls, include_deleted=False):
@@ -308,13 +347,22 @@ class Asset(db.Model):
             "purchase_date": (
                 self.purchase_date.isoformat() if self.purchase_date else None
             ),
-            "department_id": self.department_id,
-            "department_name": self.department.name if self.department else None,
+            # New field names
+            "assigned_to_department": self.assigned_to_department,
+            "assigned_to_user": self.assigned_to_user,
+            # Backward compatibility
+            "department_id": self.assigned_to_department,
+            "department_name": (
+                self.assigned_department.name if self.assigned_department else None
+            ),
+            "assigned_to_id": self.assigned_to_user,
+            "assigned_to_name": (
+                self.assigned_user.fullname if self.assigned_user else None
+            ),
             "status": self.status.value,
-            "assigned_to_id": self.assigned_to_id,
-            "assigned_to_name": self.assigned_to.fullname if self.assigned_to else None,
             "condition_notes": self.condition_notes,
             "propose_for_liquidation": self.propose_for_liquidation,
+            "location": self.location,
             "created_at": self.created_at.isoformat(),
         }
 
@@ -479,3 +527,51 @@ class EmailConfig(db.Model):
             result["has_smtp_password"] = bool(self.smtp_password)
             result["has_sendgrid_api_key"] = bool(self.sendgrid_api_key)
         return result
+
+
+class UserSession(db.Model):
+    """Track active user login sessions"""
+
+    __tablename__ = "user_sessions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    token_jti = db.Column(
+        db.String(255), unique=True, nullable=False, index=True
+    )  # JWT ID
+    ip_address = db.Column(db.String(45))  # IPv6 max length
+    user_agent = db.Column(db.String(512))
+    login_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_activity = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    logout_at = db.Column(db.DateTime)
+
+    # Relationship
+    user = db.relationship("User", backref=db.backref("sessions", lazy="dynamic"))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "username": self.user.username if self.user else None,
+            "user_fullname": self.user.fullname if self.user else None,
+            "user_email": self.user.email if self.user else None,
+            "ip_address": self.ip_address,
+            "user_agent": self.user_agent,
+            "login_at": self.login_at.isoformat() if self.login_at else None,
+            "last_activity": (
+                self.last_activity.isoformat() if self.last_activity else None
+            ),
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "is_active": self.is_active,
+            "logout_at": self.logout_at.isoformat() if self.logout_at else None,
+        }
+
+    @classmethod
+    def query_all(cls, include_inactive=False):
+        """Query with soft delete support"""
+        query = cls.query
+        if not include_inactive:
+            query = query.filter_by(is_active=True)
+        return query

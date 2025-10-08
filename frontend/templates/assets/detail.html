@@ -139,6 +139,13 @@
             <p class="text-gray-700 bg-yellow-50 p-4 rounded border-l-4 border-yellow-500">{{ asset.condition_notes }}</p>
         </div>
         {% endif %}
+
+        {% if asset.location %}
+        <div class="col-span-2">
+            <h4 class="font-bold text-lg mb-2 text-blue-600">📍 Vị Trí</h4>
+            <p class="text-gray-700 bg-blue-50 p-4 rounded border-l-4 border-blue-500">{{ asset.location }}</p>
+        </div>
+        {% endif %}
     </div>
 
     <div class="mt-8">

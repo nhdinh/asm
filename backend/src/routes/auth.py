@@ -1,7 +1,8 @@
 from datetime import datetime, time, timedelta
 import os
+import uuid
 from flask import Blueprint, json, request, jsonify, current_app
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, get_jwt
 from sqlalchemy import desc
 from models import (
     ActivityStatus,
@@ -14,6 +15,7 @@ from models import (
 )
 from audit_logger import audit_logger
 from password_policy import PasswordPolicy
+from session_manager import session_manager
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -80,7 +82,18 @@ def login():
     # Check if user exists and password is correct
     access_token = None
     if user and user.check_password(password):
-        access_token = create_access_token(identity=user.id)
+        # Generate unique JWT ID
+        jti = str(uuid.uuid4())
+        access_token = create_access_token(identity=user.id, additional_claims={"jti": jti})
+
+        # Create session record in Redis
+        session_manager.create_session(
+            user_id=user.id,
+            token_jti=jti,
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent', ''),
+            expires_in_hours=24
+        )
 
         # Create success activity record
         activity = UserActivity(
@@ -126,12 +139,13 @@ def login():
         return jsonify({"access_token": access_token, "user": user.to_dict()}), 200
     else:
         # Audit log for failed login
+        failed_count = activity.failed_count if user else 0
         audit_logger.log(
             user_id=user.id if user else None,
             username=username,
             action="login_failed",
             entity_type="user",
-            details=f"Failed login attempt for username: {username}. Failed count: {activity.failed_count}/{failed_login_limit}",
+            details=f"Failed login attempt for username: {username}. Failed count: {failed_count}/{failed_login_limit}",
             ip_address=request.remote_addr,
         )
         return jsonify({"message": "Tên đăng nhập hoặc mật khẩu không đúng"}), 401
@@ -225,6 +239,7 @@ def register():
             # Add departments (many-to-many relationship) with is_manager flag
             if "department_ids" in data:
                 from models import UserDepartment
+
                 manager_dept_ids = data.get("manager_department_ids", [])
 
                 for dept_id in data["department_ids"]:
@@ -234,7 +249,7 @@ def register():
                         assoc = UserDepartment(
                             user_id=user.id,
                             department_id=dept_id,
-                            is_manager=is_manager
+                            is_manager=is_manager,
                         )
                         db.session.add(assoc)
 

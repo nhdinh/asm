@@ -18,6 +18,7 @@
                 <textarea name="description" rows="3"
                           class="border rounded px-3 py-2 w-full">{{ department.description or '' }}</textarea>
             </div>
+            {% if session.user and session.user.role == 'ADMIN' %}
             <div class="bg-blue-50 border border-blue-200 rounded p-3">
                 <div class="flex items-start">
                     <svg class="w-5 h-5 text-blue-500 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
@@ -33,16 +34,13 @@
                 <label class="block text-sm font-medium mb-1">Thành Viên & Quản Lý</label>
                 <div class="border rounded px-3 py-2 max-h-60 overflow-y-auto">
                     {% for user in users %}
-                    {% set ns = namespace(is_member=false, is_manager=false) %}
-                    {% if user.departments %}
-                        {% for dept in user.departments %}
-                            {% if dept['id'] == department.id %}
-                                {% set ns.is_member = true %}
-                                {% if dept.get('is_manager') %}
-                                    {% set ns.is_manager = true %}
-                                {% endif %}
-                            {% endif %}
-                        {% endfor %}
+                    {% set ns = namespace(is_member=true, is_manager=false) %}
+                    {% if user.departments and department.id in user.departments %}
+                        {% set ns.is_member = true %}
+                    {% endif %}
+
+                    {% if user.id in manager_ids %}
+                        {% set ns.is_manager = true %}
                     {% endif %}
                     <div class="flex items-center mb-2 p-2 hover:bg-gray-50 rounded">
                         <input type="checkbox" name="user_ids" value="{{ user.id }}"
@@ -50,7 +48,7 @@
                                onchange="handleMemberCheckbox({{ user.id }})"
                                {% if ns.is_member %}checked{% endif %}>
                         <label for="user_{{ user.id }}" class="cursor-pointer flex-1">
-                            {{ user.username }} ({{ user.email }})
+                            {{ user.fullname }} ({{ user.email }})
                         </label>
                         <div class="flex items-center ml-2">
                             <input type="checkbox" name="manager_ids" value="{{ user.id }}"
@@ -67,6 +65,16 @@
                 </div>
                 <p class="text-xs text-gray-500 mt-1">Chọn thành viên và đánh dấu ai là quản lý phòng ban</p>
             </div>
+            {% else %}
+            <div class="bg-gray-50 border border-gray-200 rounded p-4">
+                <p class="text-sm text-gray-600">
+                    <svg class="w-5 h-5 inline mr-2 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                    </svg>
+                    Chỉ quản trị viên mới có quyền thêm/xóa thành viên vào phòng ban.
+                </p>
+            </div>
+            {% endif %}
         </div>
 
         <div class="mt-6 flex gap-2">

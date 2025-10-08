@@ -1,7 +1,20 @@
 {
   "permissions": {
     "allow": [
-      "Bash(TOKEN=\"*\")"
+      "Bash(curl:*)",
+      "Bash(/dev/null)",
+      "Bash(pkill:*)",
+      "Bash(docker-compose:*)",
+      "Bash(python:*)",
+      "Bash(cat:*)",
+      "Bash(pip install:*)",
+      "Bash(docker exec:*)",
+      "Bash(python3:*)",
+      "Bash(while read key)",
+      "Bash(do echo \"=== $key ===\")",
+      "Bash(done)",
+      "Bash(docker logs:*)",
+      "Bash(tee:*)"
     ],
     "deny": [],
     "ask": []

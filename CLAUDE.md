@@ -355,3 +355,4 @@ pytest --tb=short               # Short traceback
 - When the frontend docker instance is restarted, the docker log message "INFO in app: Asset Management Frontend startup" is issued.
 - In order to get correct log message from docker, be sure to clear log before make request, both with frontend and backend containers.
 - In anytime the template frontend\templates\*\*.html file is edited, ensure that the frontend container is restart to load changes.
+- Don't insert more users and departments when working with application
