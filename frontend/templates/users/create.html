@@ -42,6 +42,15 @@
                     <option value="user" selected>User</option>
                 </select>
             </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">Loại Xác Thực *</label>
+                <select name="user_type" required class="border rounded px-3 py-2 w-full" id="user_type" onchange="handleUserTypeChange()">
+                    <option value="local" selected>Local (Cơ sở dữ liệu nội bộ)</option>
+                    <option value="ad">Active Directory</option>
+                    <option value="sso">SSO (Single Sign-On)</option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Local: mật khẩu lưu trong hệ thống. AD/SSO: xác thực qua dịch vụ bên ngoài.</p>
+            </div>
             <div class="col-span-2">
                 <label class="flex items-center">
                     <input type="checkbox" name="must_change_password" value="true" class="mr-2">
@@ -139,16 +148,20 @@ window.addEventListener('DOMContentLoaded', async function() {
 
 // Validate password policy on submit
 document.querySelector('form').addEventListener('submit', function(e) {
+    const userType = document.getElementById('user_type').value;
     const password = document.getElementById('password').value;
     const mustChangePassword = document.querySelector('input[name="must_change_password"]').checked;
 
-    // Only check password policy if must_change_password is NOT checked
-    if (!mustChangePassword) {
-        const validation = PasswordPolicyValidator.validate(password);
-        if (!validation.valid) {
-            e.preventDefault();
-            alert('Mật khẩu không đáp ứng yêu cầu:\n\n' + validation.errors.join('\n'));
-            return false;
+    // Only check password for local users
+    if (userType === 'local') {
+        // Only check password policy if must_change_password is NOT checked
+        if (!mustChangePassword) {
+            const validation = PasswordPolicyValidator.validate(password);
+            if (!validation.valid) {
+                e.preventDefault();
+                alert('Mật khẩu không đáp ứng yêu cầu:\n\n' + validation.errors.join('\n'));
+                return false;
+            }
         }
     }
 });
@@ -181,6 +194,41 @@ function toggleManagerCheckbox(deptId) {
     } else {
         managerContainer.style.display = 'none';
         managerCheckbox.checked = false; // Uncheck manager if department unchecked
+    }
+}
+
+function handleUserTypeChange() {
+    const userType = document.getElementById('user_type').value;
+    const passwordInput = document.getElementById('password');
+    const passwordDiv = passwordInput.closest('.col-span-2');
+    const mustChangePasswordDiv = document.querySelector('input[name="must_change_password"]').closest('.col-span-2');
+    const policyValidator = document.getElementById('password-policy-validator');
+
+    if (userType === 'local') {
+        // Show password field for local users
+        passwordDiv.style.display = 'block';
+        passwordInput.required = true;
+        mustChangePasswordDiv.style.display = 'block';
+
+        // Re-enable password validation
+        if (policyValidator) {
+            const mustChangePassword = document.querySelector('input[name="must_change_password"]').checked;
+            if (!mustChangePassword) {
+                policyValidator.style.display = 'block';
+                PasswordPolicyValidator.validate(passwordInput.value);
+            }
+        }
+    } else {
+        // Hide password field for AD/SSO users
+        passwordDiv.style.display = 'none';
+        passwordInput.required = false;
+        passwordInput.value = '';  // Clear any entered password
+        mustChangePasswordDiv.style.display = 'none';
+
+        // Hide password validator
+        if (policyValidator) {
+            policyValidator.style.display = 'none';
+        }
     }
 }
 </script>

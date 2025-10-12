@@ -11,6 +11,59 @@ secrets:
     file: ./.secrets/smtp_password.txt
 
 services:
+  # Authentication Service
+  auth:
+    build:
+      context: ./auth
+      dockerfile: Dockerfile
+    container_name: ams-auth
+    secrets:
+      - postgres_user
+      - postgres_password
+      - redis_password
+    ports:
+      - 5001:5001
+    volumes:
+      - ./auth/logs:/app/logs
+      - ./auth/src:/app/src
+      - ./auth/.env:/app/.env
+    environment:
+      FLASK_ENV: production
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
+      JWT_SECRET_KEY: ${AUTH_JWT_SECRET_KEY}
+      POSTGRES_DB: ${AUTH_POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      JWT_ACCESS_TOKEN_HOURS: 1
+      JWT_REFRESH_TOKEN_DAYS: 30
+      AD_ENABLED: ${AD_ENABLED:-false}
+      AD_SERVER: ${AD_SERVER:-}
+      AD_PORT: ${AD_PORT:-389}
+      AD_USE_SSL: ${AD_USE_SSL:-false}
+      AD_BASE_DN: ${AD_BASE_DN:-}
+      AD_USER_DN: ${AD_USER_DN:-}
+      AD_BIND_USER: ${AD_BIND_USER:-}
+      AD_BIND_PASSWORD: ${AD_BIND_PASSWORD:-}
+      MAX_FAILED_LOGIN_ATTEMPTS: 5
+      ACCOUNT_LOCKOUT_MINUTES: 15
+      CORS_ORIGINS: "*"
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:5001/api/auth/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - asset-network
+
   # Backend API Service
   backend:
     build:
@@ -37,6 +90,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      USE_AUTH_SERVICE: "true"
+      AUTH_SERVICE_URL: "http://auth:5001/api/auth"
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:5000/api/health" ]
@@ -45,6 +100,7 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
+      - auth
       - postgres
       - redis
     networks:
@@ -107,6 +163,7 @@ services:
       - postgres_password # TODO: change temporary password in postgres init file
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
+      AUTH_POSTGRES_DB: ${AUTH_POSTGRES_DB}
       POSTGRES_USER_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     volumes:
@@ -176,10 +233,60 @@ services:
       - asset-network
     restart: unless-stopped
 
+  # Samba AD - Active Directory for testing
+  samba-ad:
+    build:
+      context: ./samba-ad
+      dockerfile: Dockerfile
+    container_name: ams-samba-ad
+    hostname: dc1
+    privileged: true
+    environment:
+      DOMAIN: ${AD_DOMAIN:-ASSETMAN}
+      REALM: ${AD_REALM:-ASSETMAN.LOCAL}
+      ADMIN_PASSWORD: ${AD_ADMIN_PASSWORD:-Admin@123456}
+      DEFAULT_PASSWORD: ${AD_DEFAULT_PASSWORD:-User@123456}
+      DNS_FORWARDER: ${AD_DNS_FORWARDER:-8.8.8.8}
+      HOST_IP: ${AD_HOST_IP:-172.18.0.100}
+    ports:
+      - "10053:53/tcp"   # DNS
+      - "10053:53/udp"   # DNS
+      - "10088:88/tcp"   # Kerberos
+      - "10088:88/udp"   # Kerberos
+      - "10389:389/tcp"  # LDAP
+      - "10389:389/udp"  # LDAP
+      - "10445:445/tcp"  # SMB
+      - "10464:464/tcp"  # Kerberos Password
+      - "10464:464/udp"  # Kerberos Password
+      - "10636:636/tcp"  # LDAPS
+      - "13268:3268/tcp" # Global Catalog
+      - "13269:3269/tcp" # Global Catalog SSL
+    volumes:
+      - samba_data:/var/lib/samba
+      - samba_config:/etc/samba
+      - ./samba-ad/logs:/var/log/samba
+    networks:
+      asset-network:
+        ipv4_address: ${AD_HOST_IP:-172.18.0.100}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "smbclient", "-L", "localhost", "-U", "%"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
 networks:
   asset-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
 
 volumes:
   redis_data:
+    driver: local
+  samba_data:
+    driver: local
+  samba_config:
     driver: local

@@ -1,6 +1,6 @@
 from flask import Blueprint, current_app, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, User, UserRole, UserActivity, Department, ActivityStatus
+from models import Profile, db, ProfileRole, UserActivity, Department, ActivityStatus
 from audit_logger import audit_logger
 from pagination import paginate_query, create_pagination_response, get_sort_params
 import csv
@@ -12,10 +12,10 @@ users_bp = Blueprint("users", __name__)
 @users_bp.route("", methods=["GET"])
 @jwt_required()
 def get_users():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     # Get sort parameters
@@ -23,7 +23,7 @@ def get_users():
 
     # Build base query - exclude soft-deleted users by default
     include_deleted = request.args.get("include_deleted", "false").lower() == "true"
-    query = User.query_all(include_deleted=include_deleted)
+    query = Profile.query_all(include_deleted=include_deleted)
 
     # Apply filters
     search = request.args.get("search")
@@ -34,29 +34,31 @@ def get_users():
         search_filter = f"%{search}%"
         query = query.filter(
             db.or_(
-                User.username.ilike(search_filter),
-                User.email.ilike(search_filter),
-                User.fullname.ilike(search_filter),
+                Profile.username.ilike(search_filter),
+                Profile.email.ilike(search_filter),
+                Profile.fullname.ilike(search_filter),
             )
         )
 
     if role:
         try:
-            role_enum = UserRole[role.upper()]
-            query = query.filter(User.role == role_enum)
+            role_enum = ProfileRole[role.upper()]
+            query = query.filter(Profile.role == role_enum)
         except KeyError:
             pass  # Invalid role, ignore
 
     if department_id:
-        query = query.join(User.departments).filter(Department.id == int(department_id))
+        query = query.join(Profile.departments).filter(
+            Department.id == int(department_id)
+        )
 
     # Apply sorting
     valid_sort_fields = {
-        "username": User.username,
-        "email": User.email,
-        "fullname": User.fullname,
-        "role": User.role,
-        "created_at": User.created_at,
+        "username": Profile.username,
+        "email": Profile.email,
+        "fullname": Profile.fullname,
+        "role": Profile.role,
+        "created_at": Profile.created_at,
     }
 
     if sort_by in valid_sort_fields:
@@ -67,13 +69,13 @@ def get_users():
             query = query.order_by(sort_column.asc())
     else:
         # Default sorting
-        query = query.order_by(User.created_at.desc())
+        query = query.order_by(Profile.created_at.desc())
 
-    pagination_result = paginate_query(query, user=current_user)
+    pagination_result = paginate_query(query, user=current_profile)
 
     # Convert users to dict with error handling
     items = []
-    for user in pagination_result['items']:
+    for user in pagination_result["items"]:
         try:
             items.append(user.to_dict())
         except Exception as e:
@@ -82,15 +84,15 @@ def get_users():
     response = {
         "items": items,
         "pagination": {
-            "page": pagination_result['page'],
-            "per_page": pagination_result['per_page'],
-            "total": pagination_result['total'],
-            "total_pages": pagination_result['total_pages'],
-            "has_next": pagination_result['has_next'],
-            "has_prev": pagination_result['has_prev'],
-            "next_page": pagination_result['next_page'],
-            "prev_page": pagination_result['prev_page'],
-        }
+            "page": pagination_result["page"],
+            "per_page": pagination_result["per_page"],
+            "total": pagination_result["total"],
+            "total_pages": pagination_result["total_pages"],
+            "has_next": pagination_result["has_next"],
+            "has_prev": pagination_result["has_prev"],
+            "next_page": pagination_result["next_page"],
+            "prev_page": pagination_result["prev_page"],
+        },
     }
     return jsonify(response)
 
@@ -98,11 +100,14 @@ def get_users():
 @users_bp.route("", methods=["POST"])
 @jwt_required()
 def create_user():
-    """Create a new user (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    """Create a new user (admin only) - integrates with auth service"""
+    from flask import current_app
+    from auth_client import auth_client
 
-    if current_user.role != UserRole.ADMIN:
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
+
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     data = request.json
@@ -115,96 +120,160 @@ def create_user():
     if not data.get("email"):
         return jsonify({"message": "Email is required"}), 400
 
-    # Check if username already exists
-    if User.query.filter_by(username=data["username"]).first():
+    # Check if username already exists in backend database
+    if Profile.query.filter_by(username=data["username"]).first():
         return jsonify({"message": "Username already exists"}), 400
 
-    # Check if email already exists
-    if User.query.filter_by(email=data["email"]).first():
+    # Check if email already exists in backend database
+    if Profile.query.filter_by(email=data["email"]).first():
         return jsonify({"message": "Email already exists"}), 400
 
     # Parse role
-    role = UserRole.USER
+    role = ProfileRole.USER
     if data.get("role"):
         try:
-            role = UserRole[data["role"].upper()]
+            role = ProfileRole[data["role"].upper()]
         except KeyError:
             return jsonify({"message": "Invalid role"}), 400
 
-    # Create user
-    user = User(
-        username=data["username"],
-        email=data["email"],
-        fullname=data.get("full_name", ""),
-        role=role
-    )
-    user.set_password(data["password"])
+    # Get user_type (default: local)
+    user_type = data.get("user_type", "local")
+    if user_type not in ["local", "ad", "sso"]:
+        return jsonify({"message": "Invalid user_type. Must be local, ad, or sso"}), 400
 
-    db.session.add(user)
-    db.session.flush()  # Get user ID before handling departments
+    # Step 1: Create user in auth service (stores credentials)
+    # Get current user's access token from request header
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return jsonify({"message": "Authorization token required"}), 401
 
-    # Handle department assignments
-    if data.get("department_ids"):
-        from models import UserDepartment
-        for dept_id in data["department_ids"]:
-            dept = Department.query.get(dept_id)
-            if dept:
-                # Check if this user should be a manager
-                is_manager = False
-                if data.get("manager_dept_ids") and dept_id in data["manager_dept_ids"]:
-                    is_manager = True
+    access_token = auth_header.split(" ")[1]
 
-                user_dept = UserDepartment(
-                    user_id=user.id,
-                    department_id=dept_id,
-                    is_manager=is_manager
-                )
-                db.session.add(user_dept)
+    # Prepare auth service user data
+    auth_user_data = {
+        "username": data["username"],
+        "email": data["email"],
+        "fullname": data.get("fullname", data.get("full_name", "")),
+        "role": role.value,
+        "user_type": user_type,
+    }
 
-    # Log activity
-    activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
-        action="create",
-        entity_type="user",
-        entity_id=user.id,
-        details=f"Created user {user.username}",
-        status=ActivityStatus.SUCCESS,
-    )
-    db.session.add(activity)
+    # Only include password for local users
+    if user_type == "local":
+        auth_user_data["password"] = data["password"]
 
-    db.session.commit()
+    # Call auth service to create user
+    success, _, error_msg = auth_client.create_user(access_token, auth_user_data)
 
-    # Audit log
-    audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
-        action="create",
-        entity_type="user",
-        entity_id=user.id,
-        new_values={
-            "username": user.username,
-            "email": user.email,
-            "fullname": user.fullname,
-            "role": user.role.value,
-        },
-        details=f"Created user {user.username}",
-        ip_address=request.remote_addr,
-    )
+    if not success:
+        current_app.logger.error(f"Failed to create user in auth service: {error_msg}")
+        return (
+            jsonify({"message": f"Failed to create user credentials: {error_msg}"}),
+            400,
+        )
 
-    return jsonify(user.to_dict()), 201
+    # Step 2: Create user profile in backend database (stores user information)
+    try:
+        profile = Profile(
+            username=data["username"],
+            email=data["email"],
+            fullname=data.get("fullname", data.get("full_name", "")),
+            role=role,
+            user_type=user_type,
+            is_ad_user=(user_type == "ad"),
+        )
+        # Note: Password is NOT stored in backend, only in auth service
+
+        db.session.add(profile)
+        db.session.flush()  # Get user ID before handling departments
+
+        # Handle department assignments
+        if data.get("department_ids"):
+            from models import ProfileDepartment
+
+            for dept_id in data["department_ids"]:
+                dept = Department.query.get(dept_id)
+                if dept:
+                    # Check if this user should be a manager
+                    is_manager = False
+                    if (
+                        data.get("manager_dept_ids")
+                        and dept_id in data["manager_dept_ids"]
+                    ):
+                        is_manager = True
+
+                    user_dept = ProfileDepartment(
+                        user_id=profile.id, department_id=dept_id, is_manager=is_manager
+                    )
+                    db.session.add(user_dept)
+
+        # Log activity
+        activity = UserActivity(
+            user_id=current_profile_id,
+            username=current_profile.username,
+            action="create",
+            entity_type="user",
+            entity_id=profile.id,
+            details=f"Created user {profile.username} (auth_type: {user_type})",
+            status=ActivityStatus.SUCCESS,
+        )
+        db.session.add(activity)
+
+        db.session.commit()
+
+        # Audit log
+        audit_logger.log(
+            user_id=current_profile_id,
+            username=current_profile.username,
+            action="create",
+            entity_type="user",
+            entity_id=profile.id,
+            new_values={
+                "username": profile.username,
+                "email": profile.email,
+                "fullname": profile.fullname,
+                "role": profile.role.value,
+                "user_type": profile.user_type,
+            },
+            details=f"Created user {profile.username} (auth_type: {user_type})",
+            ip_address=request.remote_addr,
+        )
+
+        current_app.logger.info(
+            f"User {profile.username} created successfully in both auth and backend databases"
+        )
+        return jsonify(profile.to_dict()), 201
+
+    except Exception as e:
+        # Rollback backend database changes
+        db.session.rollback()
+        current_app.logger.error(f"Error creating user in backend database: {str(e)}")
+
+        # TODO: Consider implementing rollback for auth service
+        # For now, the user exists in auth service but not in backend
+        # This could be handled by a cleanup job or manual intervention
+
+        return (
+            jsonify(
+                {
+                    "message": f"User credentials created but profile creation failed: {str(e)}",
+                    "note": "Please contact administrator to complete user setup",
+                }
+            ),
+            500,
+        )
 
 
 @users_bp.route("/<int:id>", methods=["GET"])
 @jwt_required()
 def get_user(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN and current_user_id != id:
+    if current_profile.role != ProfileRole.ADMIN and current_profile_id != id:
         return jsonify({"message": "Unauthorized"}), 403
 
-    user = User.query.get_or_404(id)
+    user = Profile.query.get_or_404(id)
     return jsonify(user.to_dict())
 
 
@@ -212,31 +281,31 @@ def get_user(id):
 @jwt_required()
 def update_user(id):
     try:
-        current_user_id = get_jwt_identity()
-        current_user = User.query.get(current_user_id)
+        current_profile_id = get_jwt_identity()
+        current_profile = Profile.query.get(current_profile_id)
 
-        if current_user.role != UserRole.ADMIN:
+        if current_profile.role != ProfileRole.ADMIN:
             return jsonify({"message": "Unauthorized"}), 403
 
-        user = User.query.get_or_404(id)
+        profile = Profile.query.get_or_404(id)
         data = request.json
 
         # Capture old values for audit
-        old_values = user.to_dict()
+        old_values = profile.to_dict()
 
         # Only admin can change username
-        if "username" in data and data.get("username") != user.username:
-            user.username = data["username"]
+        if "username" in data and data.get("username") != profile.username:
+            profile.username = data["username"]
 
-        user.fullname = data.get("fullname", user.fullname)
-        user.email = data.get("email", user.email)
+        profile.fullname = data.get("fullname", profile.fullname)
+        profile.email = data.get("email", profile.email)
         if data.get("role"):
-            user.role = UserRole[data["role"].upper()]
+            profile.role = ProfileRole[data["role"].upper()]
 
         # Update departments (many-to-many relationship)
         if "department_ids" in data:
             # Validate non-admins must belong to at least one department
-            if user.role != UserRole.ADMIN and (
+            if profile.role != ProfileRole.ADMIN and (
                 not data["department_ids"] or len(data["department_ids"]) == 0
             ):
                 return (
@@ -249,9 +318,9 @@ def update_user(id):
                 )
 
             # Clear existing associations
-            from models import UserDepartment
+            from models import ProfileDepartment
 
-            UserDepartment.query.filter_by(user_id=user.id).delete()
+            ProfileDepartment.query.filter_by(profile_id=profile.id).delete()
 
             # Get manager department IDs from request (format: {"dept_id": is_manager})
             manager_dept_ids = data.get("manager_department_ids", [])
@@ -261,19 +330,19 @@ def update_user(id):
                 dept = Department.query.get(dept_id)
                 if dept:
                     is_manager = dept_id in manager_dept_ids
-                    assoc = UserDepartment(
-                        user_id=user.id, department_id=dept_id, is_manager=is_manager
+                    assoc = ProfileDepartment(
+                        profile_id=profile.id, department_id=dept_id, is_manager=is_manager
                     )
                     db.session.add(assoc)
 
         # Log activity
         activity = UserActivity(
-            user_id=current_user_id,
-            username=current_user.username,
+            user_id=current_profile_id,
+            username=current_profile.username,
             action="update_user",
             entity_type="user",
-            entity_id=user.id,
-            details=f"Updated user {user.username}",
+            entity_id=profile.id,
+            details=f"Updated user {profile.username}",
             status=ActivityStatus.SUCCESS,
         )
         db.session.add(activity)
@@ -281,18 +350,18 @@ def update_user(id):
 
         # Audit log
         audit_logger.log(
-            user_id=current_user_id,
-            username=current_user.username,
+            user_id=current_profile_id,
+            username=current_profile.username,
             action="update",
             entity_type="user",
-            entity_id=user.id,
+            entity_id=profile.id,
             old_values=old_values,
-            new_values=user.to_dict(),
-            details=f"Updated user {user.username}",
+            new_values=profile.to_dict(),
+            details=f"Updated user {profile.username}",
             ip_address=request.remote_addr,
         )
 
-        return jsonify(user.to_dict())
+        return jsonify(profile.to_dict())
     except Exception as e:
         db.session.rollback()
         import traceback
@@ -304,16 +373,16 @@ def update_user(id):
 @users_bp.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
 def delete_user(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
-    if current_user_id == id:
+    if current_profile_id == id:
         return jsonify({"message": "Cannot delete yourself"}), 400
 
-    user = User.query.get_or_404(id)
+    user = Profile.query.get_or_404(id)
     username = user.username
     old_values = user.to_dict()
 
@@ -324,8 +393,8 @@ def delete_user(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="delete_user",
         entity_type="user",
         entity_id=id,
@@ -337,8 +406,8 @@ def delete_user(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="delete",
         entity_type="user",
         entity_id=id,
@@ -355,22 +424,25 @@ def delete_user(id):
 @jwt_required()
 def force_logout(id):
     """Force a user to logout by changing their password and requiring password change"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     # Prevent admin from logging out themselves
-    if id == current_user_id:
+    if id == current_profile_id:
         return jsonify({"message": "Cannot force logout yourself"}), 400
 
-    user = User.query.get_or_404(id)
+    user = Profile.query.get_or_404(id)
 
     # Generate a random temporary password
     import secrets
     import string
-    temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+
+    temp_password = "".join(
+        secrets.choice(string.ascii_letters + string.digits) for _ in range(16)
+    )
 
     # Set new password and force password change
     user.set_password(temp_password)
@@ -378,8 +450,8 @@ def force_logout(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="force_logout",
         entity_type="user",
         entity_id=id,
@@ -392,8 +464,8 @@ def force_logout(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="force_logout",
         entity_type="user",
         entity_id=id,
@@ -401,21 +473,26 @@ def force_logout(id):
         ip_address=request.remote_addr,
     )
 
-    return jsonify({
-        "message": f"User {user.username} has been logged out and must change password on next login"
-    }), 200
+    return (
+        jsonify(
+            {
+                "message": f"User {user.username} has been logged out and must change password on next login"
+            }
+        ),
+        200,
+    )
 
 
 @users_bp.route("/<int:id>/reset-password", methods=["POST"])
 @jwt_required()
 def reset_password(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
-    user = User.query.get_or_404(id)
+    user = Profile.query.get_or_404(id)
     data = request.json
 
     if not data.get("password"):
@@ -429,8 +506,8 @@ def reset_password(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="reset_password",
         entity_type="user",
         entity_id=user.id,
@@ -442,8 +519,8 @@ def reset_password(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="reset_password",
         entity_type="user",
         entity_id=user.id,
@@ -465,10 +542,10 @@ def reset_password(id):
 @users_bp.route("/sample-csv", methods=["GET"])
 @jwt_required()
 def download_sample_csv():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
     # Create sample CSV
@@ -507,10 +584,14 @@ def download_sample_csv():
 @users_bp.route("/upload-csv", methods=["POST"])
 @jwt_required()
 def upload_csv():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    """Upload CSV to create multiple users - integrates with auth service"""
+    from flask import current_app
+    from auth_client import auth_client
 
-    if current_user.role != UserRole.ADMIN:
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
+
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
     if "file" not in request.files:
@@ -523,6 +604,13 @@ def upload_csv():
 
     if not file.filename.endswith(".csv"):
         return jsonify({"message": "File must be a CSV"}), 400
+
+    # Get access token for auth service calls
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return jsonify({"message": "Authorization token required"}), 401
+
+    access_token = auth_header.split(" ")[1]
 
     try:
         # Read CSV file
@@ -549,13 +637,13 @@ def upload_csv():
                     continue
 
                 # Check if user already exists
-                if User.query.filter_by(username=row["username"]).first():
+                if Profile.query.filter_by(username=row["username"]).first():
                     errors.append(
                         f"Row {row_num}: Username '{row['username']}' already exists"
                     )
                     continue
 
-                if User.query.filter_by(email=row["email"]).first():
+                if Profile.query.filter_by(email=row["email"]).first():
                     errors.append(
                         f"Row {row_num}: Email '{row['email']}' already exists"
                     )
@@ -564,19 +652,46 @@ def upload_csv():
                 # Parse role
                 role_str = row.get("role", "user").lower()
                 if role_str == "admin":
-                    role = UserRole.ADMIN
+                    role = ProfileRole.ADMIN
                 else:
-                    role = UserRole.USER
+                    role = ProfileRole.USER
 
-                # Create user
+                # Get user_type (default: local)
+                user_type = row.get("user_type", "local").lower()
+                if user_type not in ["local", "ad", "sso"]:
+                    user_type = "local"
+
+                # Step 1: Create user in auth service
+                auth_user_data = {
+                    "username": row["username"],
+                    "email": row["email"],
+                    "fullname": row["fullname"],
+                    "role": role.value,
+                    "user_type": user_type,
+                }
+
+                # Only include password for local users
+                if user_type == "local":
+                    auth_user_data["password"] = row["password"]
+
+                success, _, error_msg = auth_client.create_user(
+                    access_token, auth_user_data
+                )
+
+                if not success:
+                    errors.append(f"Row {row_num}: Auth service error - {error_msg}")
+                    continue
+
+                # Step 2: Create user in backend database
                 user = User(
                     username=row["username"],
                     fullname=row["fullname"],
                     email=row["email"],
                     role=role,
-                    must_change_password=True,  # Force password change on first login
+                    user_type=user_type,
+                    is_ad_user=(user_type == "ad"),
                 )
-                user.set_password(row["password"])
+                # Note: Password NOT stored in backend, only in auth service
 
                 db.session.add(user)
                 db.session.flush()  # Get user.id
@@ -590,7 +705,7 @@ def upload_csv():
                     ]
 
                     # Validate non-admin users must have at least one department
-                    if role != UserRole.ADMIN and len(dept_ids) == 0:
+                    if role != ProfileRole.ADMIN and len(dept_ids) == 0:
                         db.session.rollback()
                         errors.append(
                             f"Row {row_num}: Non-admin users must be assigned to at least one department"
@@ -609,8 +724,8 @@ def upload_csv():
 
                 # Log activity
                 activity = UserActivity(
-                    user_id=current_user_id,
-                    username=current_user.username,
+                    user_id=current_profile_id,
+                    username=current_profile.username,
                     action="create_user_csv",
                     entity_type="user",
                     entity_id=user.id,

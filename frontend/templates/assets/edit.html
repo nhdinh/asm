@@ -59,18 +59,19 @@
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">Bàn Giao Cho</label>
-                <select name="assigned_to_id" class="border rounded px-3 py-2 w-full">
-                    <option value="">Chưa bàn giao</option>
+                <select id="assigned_to_select" name="assigned_to_id" class="border rounded px-3 py-2 w-full" onchange="updateDepartmentId()">
+                    <option value="" data-department-id="">Chưa bàn giao</option>
                     {% for dept in departments %}
                         <optgroup label="{{ dept.name }}">
                             {% for user in users if user.departments and dept.id in (user.departments | map(attribute='id') | list) %}
-                                <option value="{{ user.id }}" {% if asset.assigned_to_id == user.id %}selected{% endif %}>
+                                <option value="{{ user.id }}" data-department-id="{{ dept.id }}" {% if asset.assigned_to_id == user.id %}selected{% endif %}>
                                     {{ user.username }} ({{ user.email }})
                                 </option>
                             {% endfor %}
                         </optgroup>
                     {% endfor %}
                 </select>
+                <input type="hidden" id="assigned_to_department_id" name="assigned_to_department_id" value="{{ asset.assigned_to_department or '' }}">
             </div>
             <div class="col-span-2">
                 <label class="block text-sm font-medium mb-1">Mô Tả</label>
@@ -119,6 +120,18 @@ function toggleCategoryInput() {
     }
 }
 
+function updateDepartmentId() {
+    const select = document.getElementById('assigned_to_select');
+    const hiddenInput = document.getElementById('assigned_to_department_id');
+    const selectedOption = select.options[select.selectedIndex];
+    const departmentId = selectedOption.getAttribute('data-department-id');
+
+    // Update hidden input with department ID
+    hiddenInput.value = departmentId || '';
+
+    console.log('Selected user:', select.value, 'Department ID:', departmentId);
+}
+
 // Set initial value on page load
 document.addEventListener('DOMContentLoaded', function() {
     const select = document.getElementById('category-select');
@@ -128,6 +141,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (select.value !== '__other__' && select.value !== '') {
         input.value = select.value;
     }
+
+    // Initialize department ID on page load
+    updateDepartmentId();
 });
 </script>
 {% endblock %}

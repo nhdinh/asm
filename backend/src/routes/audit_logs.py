@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import User, UserRole
+from models import Profile, ProfileRole
 from audit_logger import audit_logger
 from datetime import datetime
 import os
@@ -13,11 +13,11 @@ audit_logs_bp = Blueprint("audit_logs", __name__)
 @jwt_required()
 def get_audit_logs():
     """Get audit logs from Redis (recent logs)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Only admin can view audit logs
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     # Get query parameters
@@ -53,30 +53,32 @@ def get_audit_logs():
         action=action,
         entity_type=entity_type,
         limit=limit,
-        offset=offset
+        offset=offset,
     )
 
     # Get count
     total_count = audit_logger.get_count()
 
-    return jsonify({
-        "logs": logs,
-        "total_count": total_count,
-        "showing": len(logs),
-        "limit": limit,
-        "offset": offset
-    })
+    return jsonify(
+        {
+            "logs": logs,
+            "total_count": total_count,
+            "showing": len(logs),
+            "limit": limit,
+            "offset": offset,
+        }
+    )
 
 
 @audit_logs_bp.route("/archived", methods=["GET"])
 @jwt_required()
 def get_archived_logs():
     """Get list of archived log files"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Only admin can view audit logs
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     archive_dir = "/app/logs/audit"
@@ -93,12 +95,14 @@ def get_archived_logs():
         file_size = os.path.getsize(filepath)
         file_mtime = os.path.getmtime(filepath)
 
-        files_info.append({
-            "filename": filename,
-            "filepath": filepath,
-            "size": file_size,
-            "modified_date": datetime.fromtimestamp(file_mtime).isoformat()
-        })
+        files_info.append(
+            {
+                "filename": filename,
+                "filepath": filepath,
+                "size": file_size,
+                "modified_date": datetime.fromtimestamp(file_mtime).isoformat(),
+            }
+        )
 
     return jsonify({"files": files_info})
 
@@ -107,11 +111,11 @@ def get_archived_logs():
 @jwt_required()
 def get_archived_log_content(filename):
     """Read content from an archived log file"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Only admin can view audit logs
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     archive_dir = "/app/logs/audit"
@@ -138,43 +142,41 @@ def get_archived_log_content(filename):
     # Read logs from file
     logs = audit_logger.read_archived_logs(filepath, filters, limit)
 
-    return jsonify({
-        "filename": filename,
-        "logs": logs,
-        "showing": len(logs)
-    })
+    return jsonify({"filename": filename, "logs": logs, "showing": len(logs)})
 
 
 @audit_logs_bp.route("/archive", methods=["POST"])
 @jwt_required()
 def trigger_archive():
     """Manually trigger archival of old logs"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Only admin can trigger archive
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     days = request.json.get("days", 30)
 
     archived_count = audit_logger.archive_old_logs(days=days)
 
-    return jsonify({
-        "message": f"Archived {archived_count} logs older than {days} days",
-        "count": archived_count
-    })
+    return jsonify(
+        {
+            "message": f"Archived {archived_count} logs older than {days} days",
+            "count": archived_count,
+        }
+    )
 
 
 @audit_logs_bp.route("/stats", methods=["GET"])
 @jwt_required()
 def get_audit_stats():
     """Get statistics about audit logs"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Only admin can view audit logs
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     # Get count from Redis
@@ -190,9 +192,11 @@ def get_audit_stats():
         archived_files = len(files)
         archived_size = sum(os.path.getsize(f) for f in files)
 
-    return jsonify({
-        "redis_logs": redis_count,
-        "archived_files": archived_files,
-        "archived_size_bytes": archived_size,
-        "archived_size_mb": round(archived_size / (1024 * 1024), 2)
-    })
+    return jsonify(
+        {
+            "redis_logs": redis_count,
+            "archived_files": archived_files,
+            "archived_size_bytes": archived_size,
+            "archived_size_mb": round(archived_size / (1024 * 1024), 2),
+        }
+    )

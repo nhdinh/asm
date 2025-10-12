@@ -1,12 +1,21 @@
 from app import db
 from datetime import datetime
 from enum import Enum, StrEnum
-import bcrypt
+
+# bcrypt import removed - authentication handled by auth service
 
 
-class UserRole(StrEnum):
+class ProfileRole(StrEnum):
     ADMIN = "ADMIN"
     USER = "USER"
+
+
+class ProfileType(StrEnum):
+    """User authentication type"""
+
+    LOCAL = "local"  # Local database authentication
+    ACTIVE_DIRECTORY = "ad"  # Active Directory/LDAP authentication
+    SSO = "sso"  # Single Sign-On (future support)
 
 
 class AssetStatus(Enum):
@@ -21,10 +30,10 @@ class ActivityStatus(Enum):
 
 
 # Association object for many-to-many relationship between User and Department
-class UserDepartment(db.Model):
-    __tablename__ = "user_departments"
+class ProfileDepartment(db.Model):
+    __tablename__ = "profile_departments"
 
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
+    profile_id = db.Column(db.Integer, db.ForeignKey("profiles.id"), primary_key=True)
     department_id = db.Column(
         db.Integer, db.ForeignKey("departments.id"), primary_key=True
     )
@@ -34,27 +43,43 @@ class UserDepartment(db.Model):
     )  # Indicates if user manages this department
 
     # Relationships
-    user = db.relationship("User", back_populates="department_associations")
+    user = db.relationship("Profile", back_populates="department_associations")
     department = db.relationship("Department", back_populates="user_associations")
 
 
-class User(db.Model):
-    __tablename__ = "users"
+class Profile(db.Model):
+    """
+    Profile Model
+    Stores user information only - authentication handled by auth service
+    """
+
+    __tablename__ = "profiles"
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     fullname = db.Column(db.String(100))
     email = db.Column(db.String(100), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
+    # password_hash removed - authentication handled by auth service
+    # must_change_password removed - authentication handled by auth service
     role = db.Column(
         db.Enum(
-            UserRole,
-            name="userrole",
+            ProfileRole,
+            name="profilerole",
             values_callable=lambda obj: [e.value for e in obj],
         ),
         nullable=False,
     )
-    must_change_password = db.Column(db.Boolean, default=False)
+
+    # User type for authentication
+    user_type = db.Column(
+        db.String(20),  # Using String instead of Enum for flexibility
+        default="local",
+        nullable=False,
+    )
+
+    # Backward compatibility
+    is_ad_user = db.Column(db.Boolean, default=False)
+
     items_per_page = db.Column(
         db.Integer, default=None
     )  # None means use system default
@@ -63,7 +88,7 @@ class User(db.Model):
 
     # Association object relationship
     department_associations = db.relationship(
-        "UserDepartment", back_populates="user", cascade="all, delete-orphan"
+        "ProfileDepartment", back_populates="user", cascade="all, delete-orphan"
     )
 
     # Convenience property to get departments
@@ -73,15 +98,9 @@ class User(db.Model):
 
     activities = db.relationship("UserActivity", backref="user", lazy="dynamic")
 
-    def set_password(self, password):
-        self.password_hash = bcrypt.hashpw(
-            password.encode("utf-8"), bcrypt.gensalt()
-        ).decode("utf-8")
-
-    def check_password(self, password):
-        return bcrypt.checkpw(
-            password.encode("utf-8"), self.password_hash.encode("utf-8")
-        )
+    # Password methods removed - authentication handled by auth service
+    # def set_password() - REMOVED
+    # def check_password() - REMOVED
 
     @classmethod
     def query_all(cls, include_deleted=False):
@@ -112,7 +131,9 @@ class User(db.Model):
             "fullname": self.fullname,
             "email": self.email,
             "role": self.role.value,
-            "must_change_password": self.must_change_password,
+            "user_type": self.user_type,
+            "is_ad_user": self.is_ad_user,  # Backward compatibility
+            # must_change_password removed - authentication handled by auth service
             "items_per_page": self.items_per_page,
             "departments": departments_with_manager,
             "created_at": self.created_at.isoformat(),
@@ -138,7 +159,7 @@ class Department(db.Model):
 
     # Association object relationship
     user_associations = db.relationship(
-        "UserDepartment", back_populates="department", cascade="all, delete-orphan"
+        "ProfileDepartment", back_populates="department", cascade="all, delete-orphan"
     )
 
     # to get users
@@ -185,7 +206,7 @@ class Department(db.Model):
         total_value = sum(asset.purchase_value or 0 for asset in self.assets.all())
 
         # Get managers list (users with MANAGER role in this department)
-        managers_list = self.managers(include_deleted)
+        managers_list = self.managers(include_deleted=include_deleted)
         manager_ids = [m.id for m in managers_list]
 
         result = {
@@ -193,7 +214,9 @@ class Department(db.Model):
             "name": self.name,
             "description": self.description,
             "manager_names": (
-                ", ".join([m.fullname for m in managers_list])
+                ", ".join(
+                    [m.fullname if m.fullname else m.username for m in managers_list]
+                )
                 if managers_list
                 else None
             ),
@@ -260,7 +283,6 @@ class Asset(db.Model):
     code = db.Column(db.String(50), unique=True, nullable=False)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
-    category = db.Column(db.String(50))  # Keep for backward compatibility
     category_id = db.Column(
         db.Integer, db.ForeignKey("asset_categories.id"), nullable=True
     )  # New foreign key
@@ -273,7 +295,9 @@ class Asset(db.Model):
     # - If assigned_to_user: asset belongs to user's department(s)
     #   * If user has 1 department: auto-assign to that department
     #   * If user has multiple departments: must explicitly set assigned_to_department
-    assigned_to_user = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    assigned_to_user = db.Column(
+        db.Integer, db.ForeignKey("profiles.id"), nullable=True
+    )
     assigned_to_department = db.Column(
         db.Integer, db.ForeignKey("departments.id"), nullable=True
     )
@@ -281,7 +305,9 @@ class Asset(db.Model):
     status = db.Column(db.Enum(AssetStatus), default=AssetStatus.ACTIVE)
     condition_notes = db.Column(db.Text)
     propose_for_liquidation = db.Column(db.Boolean, default=False, nullable=False)
-    location = db.Column(db.String(255), nullable=True)  # Physical location of the asset
+    location = db.Column(
+        db.String(255), nullable=True
+    )  # Physical location of the asset
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
@@ -290,10 +316,11 @@ class Asset(db.Model):
     deleted_at = db.Column(db.DateTime, nullable=True)
 
     transfers = db.relationship("AssetTransfer", backref="asset", lazy="dynamic")
-    assigned_user = db.relationship("User", foreign_keys=[assigned_to_user])
+    assigned_user = db.relationship("Profile", foreign_keys=[assigned_to_user])
     assigned_department = db.relationship(
         "Department", foreign_keys=[assigned_to_department]
     )
+    category = db.relationship("AssetCategory", foreign_keys=[category_id])
 
     # Backward compatibility properties
     @property
@@ -338,11 +365,8 @@ class Asset(db.Model):
             "code": self.code,
             "name": self.name,
             "description": self.description,
-            "category": self.category,  # Backward compatibility
             "category_id": self.category_id,
-            "category_name": (
-                self.category_obj.name if self.category_obj else self.category
-            ),
+            "category_name": (self.category_obj.name if self.category_obj else None),
             "purchase_value": self.purchase_value,
             "purchase_date": (
                 self.purchase_date.isoformat() if self.purchase_date else None
@@ -350,14 +374,12 @@ class Asset(db.Model):
             # New field names
             "assigned_to_department": self.assigned_to_department,
             "assigned_to_user": self.assigned_to_user,
-            # Backward compatibility
-            "department_id": self.assigned_to_department,
             "department_name": (
                 self.assigned_department.name if self.assigned_department else None
             ),
             "assigned_to_id": self.assigned_to_user,
             "assigned_to_name": (
-                self.assigned_user.fullname if self.assigned_user else None
+                (self.assigned_user.fullname if self.assigned_user.fullname else self.assigned_user.username) if self.assigned_user else None
             ),
             "status": self.status.value,
             "condition_notes": self.condition_notes,
@@ -375,16 +397,16 @@ class AssetTransfer(db.Model):
     from_department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
     to_department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
     assigned_to_id = db.Column(
-        db.Integer, db.ForeignKey("users.id")
+        db.Integer, db.ForeignKey("profiles.id")
     )  # User receiving the asset
-    transferred_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    transferred_by = db.Column(db.Integer, db.ForeignKey("profiles.id"))
     transfer_date = db.Column(db.DateTime, default=datetime.utcnow)
     notes = db.Column(db.Text)
 
     from_department = db.relationship("Department", foreign_keys=[from_department_id])
     to_department = db.relationship("Department", foreign_keys=[to_department_id])
-    assigned_to = db.relationship("User", foreign_keys=[assigned_to_id])
-    transferred_by_user = db.relationship("User", foreign_keys=[transferred_by])
+    assigned_to = db.relationship("Profile", foreign_keys=[assigned_to_id])
+    transferred_by_user = db.relationship("Profile", foreign_keys=[transferred_by])
 
     def to_dict(self):
         return {
@@ -413,7 +435,7 @@ class UserActivity(db.Model):
     __tablename__ = "user_activities"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("profiles.id"), nullable=False)
     username = db.Column(db.String(50), nullable=False)
     action = db.Column(db.String(100), nullable=False)
     entity_type = db.Column(db.String(50))
@@ -451,7 +473,7 @@ class SystemSetting(db.Model):
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
-    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    updated_by = db.Column(db.Integer, db.ForeignKey("profiles.id"))
 
     def to_dict(self):
         return {
@@ -501,7 +523,7 @@ class EmailConfig(db.Model):
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
-    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    updated_by = db.Column(db.Integer, db.ForeignKey("profiles.id"))
 
     def to_dict(self, include_secrets=False):
         result = {
@@ -535,7 +557,7 @@ class UserSession(db.Model):
     __tablename__ = "user_sessions"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("profiles.id"), nullable=False)
     token_jti = db.Column(
         db.String(255), unique=True, nullable=False, index=True
     )  # JWT ID
@@ -548,7 +570,7 @@ class UserSession(db.Model):
     logout_at = db.Column(db.DateTime)
 
     # Relationship
-    user = db.relationship("User", backref=db.backref("sessions", lazy="dynamic"))
+    user = db.relationship("Profile", backref=db.backref("sessions", lazy="dynamic"))
 
     def to_dict(self):
         return {

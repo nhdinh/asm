@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, User, Department, Asset, UserRole
+from models import db, Profile, Department, Asset, ProfileRole
 from datetime import datetime
 from audit_logger import audit_logger
 
@@ -11,82 +11,105 @@ trash_bp = Blueprint("trash", __name__)
 @jwt_required()
 def get_deleted_users():
     """Get all soft-deleted users (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
-    deleted_users = User.query.filter(User.deleted_at.isnot(None)).all()
+    deleted_users = Profile.query.filter(Profile.deleted_at.isnot(None)).all()
 
-    return jsonify({
-        "items": [
+    return (
+        jsonify(
             {
-                **user.to_dict(),
-                "deleted_at": user.deleted_at.isoformat() if user.deleted_at else None
+                "items": [
+                    {
+                        **user.to_dict(),
+                        "deleted_at": (
+                            user.deleted_at.isoformat() if user.deleted_at else None
+                        ),
+                    }
+                    for user in deleted_users
+                ]
             }
-            for user in deleted_users
-        ]
-    }), 200
+        ),
+        200,
+    )
 
 
 @trash_bp.route("/departments", methods=["GET"])
 @jwt_required()
 def get_deleted_departments():
     """Get all soft-deleted departments (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
-    deleted_departments = Department.query.filter(Department.deleted_at.isnot(None)).all()
+    deleted_departments = Department.query.filter(
+        Department.deleted_at.isnot(None)
+    ).all()
 
-    return jsonify({
-        "items": [
+    return (
+        jsonify(
             {
-                **dept.to_dict(),
-                "deleted_at": dept.deleted_at.isoformat() if dept.deleted_at else None
+                "items": [
+                    {
+                        **dept.to_dict(),
+                        "deleted_at": (
+                            dept.deleted_at.isoformat() if dept.deleted_at else None
+                        ),
+                    }
+                    for dept in deleted_departments
+                ]
             }
-            for dept in deleted_departments
-        ]
-    }), 200
+        ),
+        200,
+    )
 
 
 @trash_bp.route("/assets", methods=["GET"])
 @jwt_required()
 def get_deleted_assets():
     """Get all soft-deleted assets (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
     deleted_assets = Asset.query.filter(Asset.deleted_at.isnot(None)).all()
 
-    return jsonify({
-        "items": [
+    return (
+        jsonify(
             {
-                **asset.to_dict(),
-                "deleted_at": asset.deleted_at.isoformat() if asset.deleted_at else None
+                "items": [
+                    {
+                        **asset.to_dict(),
+                        "deleted_at": (
+                            asset.deleted_at.isoformat() if asset.deleted_at else None
+                        ),
+                    }
+                    for asset in deleted_assets
+                ]
             }
-            for asset in deleted_assets
-        ]
-    }), 200
+        ),
+        200,
+    )
 
 
 @trash_bp.route("/users/<int:id>/restore", methods=["POST"])
 @jwt_required()
 def restore_user(id):
     """Restore a soft-deleted user (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
-    user = User.query.get_or_404(id)
+    user = Profile.query.get_or_404(id)
 
     if user.deleted_at is None:
         return jsonify({"message": "User is not deleted"}), 400
@@ -96,8 +119,8 @@ def restore_user(id):
 
     # Log the activity
     audit_logger.log(
-        user_id=current_user.id,
-        username=current_user.username,
+        user_id=current_profile.id,
+        username=current_profile.username,
         action="restore_user",
         entity_type="user",
         entity_id=user.id,
@@ -105,17 +128,25 @@ def restore_user(id):
         ip_address=request.remote_addr,
     )
 
-    return jsonify({"message": f"User {user.username} restored successfully", "user": user.to_dict()}), 200
+    return (
+        jsonify(
+            {
+                "message": f"User {user.username} restored successfully",
+                "user": user.to_dict(),
+            }
+        ),
+        200,
+    )
 
 
 @trash_bp.route("/departments/<int:id>/restore", methods=["POST"])
 @jwt_required()
 def restore_department(id):
     """Restore a soft-deleted department (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
     department = Department.query.get_or_404(id)
@@ -128,8 +159,8 @@ def restore_department(id):
 
     # Log the activity
     audit_logger.log(
-        user_id=current_user.id,
-        username=current_user.username,
+        user_id=current_profile.id,
+        username=current_profile.username,
         action="restore_department",
         entity_type="department",
         entity_id=department.id,
@@ -137,17 +168,25 @@ def restore_department(id):
         ip_address=request.remote_addr,
     )
 
-    return jsonify({"message": f"Department {department.name} restored successfully", "department": department.to_dict()}), 200
+    return (
+        jsonify(
+            {
+                "message": f"Department {department.name} restored successfully",
+                "department": department.to_dict(),
+            }
+        ),
+        200,
+    )
 
 
 @trash_bp.route("/assets/<int:id>/restore", methods=["POST"])
 @jwt_required()
 def restore_asset(id):
     """Restore a soft-deleted asset (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
     asset = Asset.query.get_or_404(id)
@@ -160,8 +199,8 @@ def restore_asset(id):
 
     # Log the activity
     audit_logger.log(
-        user_id=current_user.id,
-        username=current_user.username,
+        user_id=current_profile.id,
+        username=current_profile.username,
         action="restore_asset",
         entity_type="asset",
         entity_id=asset.id,
@@ -169,20 +208,28 @@ def restore_asset(id):
         ip_address=request.remote_addr,
     )
 
-    return jsonify({"message": f"Asset {asset.code} restored successfully", "asset": asset.to_dict()}), 200
+    return (
+        jsonify(
+            {
+                "message": f"Asset {asset.code} restored successfully",
+                "asset": asset.to_dict(),
+            }
+        ),
+        200,
+    )
 
 
 @trash_bp.route("/users/<int:id>/permanent-delete", methods=["DELETE"])
 @jwt_required()
 def permanent_delete_user(id):
     """Permanently delete a user (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
-    user = User.query.get_or_404(id)
+    user = Profile.query.get_or_404(id)
 
     if user.deleted_at is None:
         return jsonify({"message": "User must be soft-deleted first"}), 400
@@ -193,8 +240,8 @@ def permanent_delete_user(id):
 
     # Log the activity
     audit_logger.log(
-        user_id=current_user.id,
-        username=current_user.username,
+        user_id=current_profile.id,
+        username=current_profile.username,
         action="permanent_delete_user",
         entity_type="user",
         entity_id=id,
@@ -209,10 +256,10 @@ def permanent_delete_user(id):
 @jwt_required()
 def permanent_delete_department(id):
     """Permanently delete a department (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
     department = Department.query.get_or_404(id)
@@ -226,8 +273,8 @@ def permanent_delete_department(id):
 
     # Log the activity
     audit_logger.log(
-        user_id=current_user.id,
-        username=current_user.username,
+        user_id=current_profile.id,
+        username=current_profile.username,
         action="permanent_delete_department",
         entity_type="department",
         entity_id=id,
@@ -242,10 +289,10 @@ def permanent_delete_department(id):
 @jwt_required()
 def permanent_delete_asset(id):
     """Permanently delete an asset (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
     asset = Asset.query.get_or_404(id)
@@ -259,8 +306,8 @@ def permanent_delete_asset(id):
 
     # Log the activity
     audit_logger.log(
-        user_id=current_user.id,
-        username=current_user.username,
+        user_id=current_profile.id,
+        username=current_profile.username,
         action="permanent_delete_asset",
         entity_type="asset",
         entity_id=id,

@@ -19,7 +19,7 @@ import requests
 from api_client import ApiClient
 
 
-class UserRole(StrEnum):
+class ProfileRole(StrEnum):
     ADMIN = "ADMIN"
     USER = "USER"
 
@@ -64,7 +64,7 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if "user" not in session or session["user"].get("role") != UserRole.ADMIN:
+        if "user" not in session or session["user"].get("role") != ProfileRole.ADMIN:
             flash("Bạn không có quyền truy cập chức năng này.", "danger")
             return redirect(url_for("dashboard"))
         return f(*args, **kwargs)
@@ -139,15 +139,22 @@ def login():
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
+        auth_type = request.form.get(
+            "auth_type", "local"
+        )  # Default to local if not specified
 
         try:
             client = get_api_client()
-            response = client.login(username, password)
+            response = client.login(username, password, auth_type)
 
             if response and response.status_code == 200:
                 result = response.json()
                 session["access_token"] = result["access_token"]
                 session["user"] = result["user"]
+
+                # Store refresh token if available (from auth service)
+                if "refresh_token" in result:
+                    session["refresh_token"] = result["refresh_token"]
 
                 app.logger.info(session["user"])
                 flash("Đăng nhập thành công!", "success")
@@ -408,6 +415,9 @@ def assets():
         pagination = None
         flash("Không thể tải danh sách tài sản", "warning")
 
+    asset_dict = assets[0]
+    app.logger.info(f"Asset 0 = {asset_dict}")
+
     return render_template(
         "assets/list.html",
         assets=assets,
@@ -423,7 +433,7 @@ def assets():
 def departments():
     if request.method == "POST":
         # Only admin can create departments
-        if "user" not in session or session["user"].get("role") != UserRole.ADMIN:
+        if "user" not in session or session["user"].get("role") != ProfileRole.ADMIN:
             flash("Bạn không có quyền tạo phòng ban mới.", "danger")
             return redirect(url_for("departments"))
 
@@ -464,8 +474,8 @@ def departments():
 
         # Only admin needs users list (for creating departments)
         users = []
-        current_user = session.get("user")
-        if current_user and current_user.get("role") == UserRole.ADMIN:
+        current_profile = session.get("user")
+        if current_profile and current_profile.get("role") == ProfileRole.ADMIN:
             try:
                 users = extract_items(client.get_users())
             except Exception as e:
@@ -473,10 +483,10 @@ def departments():
 
         # Get current user's managed department IDs
         managed_dept_ids = []
-        if current_user and current_user.get("departments"):
+        if current_profile and current_profile.get("departments"):
             managed_dept_ids = [
                 dept["id"]
-                for dept in current_user["departments"]
+                for dept in current_profile["departments"]
                 if dept.get("is_manager", False)
             ]
 
@@ -582,6 +592,7 @@ def create_user():
                 "email": request.form["email"],
                 "password": request.form["password"],
                 "role": request.form["role"],
+                "user_type": request.form.get("user_type", "local"),  # Default to local
                 "must_change_password": request.form.get("must_change_password")
                 == "true",
                 "department_ids": [int(d) for d in department_ids if d],
@@ -873,7 +884,13 @@ def edit_asset(id):
                     if request.form.get("assigned_to_id")
                     else None
                 ),
+                "assigned_to_department_id": (
+                    int(request.form["assigned_to_department_id"])
+                    if request.form.get("assigned_to_department_id")
+                    else None
+                ),
                 "condition_notes": request.form.get("condition_notes", ""),
+                "location": request.form.get("location", ""),
             }
 
             client.update_asset(id, asset_data)
@@ -978,7 +995,7 @@ def bulk_export_assets():
     """Export multiple selected assets to Excel"""
     try:
         data = request.json
-        asset_ids = data.get('asset_ids', [])
+        asset_ids = data.get("asset_ids", [])
 
         if not asset_ids:
             return jsonify({"message": "No assets selected"}), 400
@@ -1008,12 +1025,24 @@ def bulk_export_assets():
         ws.title = "Tài sản"
 
         # Header
-        headers = ["Mã tài sản", "Tên tài sản", "Danh mục", "Trạng thái", "Phòng ban",
-                   "Người sử dụng", "Vị trí", "Giá trị (VND)", "Ngày mua", "Ghi chú"]
+        headers = [
+            "Mã tài sản",
+            "Tên tài sản",
+            "Danh mục",
+            "Trạng thái",
+            "Phòng ban",
+            "Người sử dụng",
+            "Vị trí",
+            "Giá trị (VND)",
+            "Ngày mua",
+            "Ghi chú",
+        ]
         ws.append(headers)
 
         # Style header
-        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_fill = PatternFill(
+            start_color="366092", end_color="366092", fill_type="solid"
+        )
         header_font = Font(bold=True, color="FFFFFF")
         for cell in ws[1]:
             cell.fill = header_fill
@@ -1022,24 +1051,26 @@ def bulk_export_assets():
 
         # Add data
         status_map = {
-            'ACTIVE': 'Đang sử dụng',
-            'DAMAGED': 'Hư hỏng',
-            'DISPOSED': 'Đã thanh lý'
+            "ACTIVE": "Đang sử dụng",
+            "DAMAGED": "Hư hỏng",
+            "DISPOSED": "Đã thanh lý",
         }
 
         for asset in assets_data:
-            ws.append([
-                asset.get('code', ''),
-                asset.get('name', ''),
-                asset.get('category', ''),
-                status_map.get(asset.get('status', ''), asset.get('status', '')),
-                asset.get('department_name', ''),
-                asset.get('assigned_user_name', ''),
-                asset.get('location', ''),
-                asset.get('value', ''),
-                asset.get('purchase_date', ''),
-                asset.get('notes', '')
-            ])
+            ws.append(
+                [
+                    asset.get("code", ""),
+                    asset.get("name", ""),
+                    asset.get("category", ""),
+                    status_map.get(asset.get("status", ""), asset.get("status", "")),
+                    asset.get("department_name", ""),
+                    asset.get("assigned_user_name", ""),
+                    asset.get("location", ""),
+                    asset.get("value", ""),
+                    asset.get("purchase_date", ""),
+                    asset.get("notes", ""),
+                ]
+            )
 
         # Auto-size columns
         for column in ws.columns:
@@ -1064,9 +1095,9 @@ def bulk_export_assets():
 
         return send_file(
             output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             as_attachment=True,
-            download_name=filename
+            download_name=filename,
         )
 
     except Exception as e:
@@ -1081,7 +1112,7 @@ def bulk_delete_assets():
     """Delete multiple assets"""
     try:
         data = request.json
-        asset_ids = data.get('asset_ids', [])
+        asset_ids = data.get("asset_ids", [])
 
         if not asset_ids:
             return jsonify({"message": "No assets selected"}), 400
@@ -1101,13 +1132,18 @@ def bulk_delete_assets():
                 errors.append(f"Asset {asset_id}: {str(e)}")
                 app.logger.warning(f"Failed to delete asset {asset_id}: {str(e)}")
 
-        return jsonify({
-            "success": True,
-            "message": f"Deleted {success_count} asset(s). Failed: {failed_count}",
-            "success_count": success_count,
-            "failed_count": failed_count,
-            "errors": errors if errors else None
-        }), 200
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "message": f"Deleted {success_count} asset(s). Failed: {failed_count}",
+                    "success_count": success_count,
+                    "failed_count": failed_count,
+                    "errors": errors if errors else None,
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         app.logger.exception(e)
@@ -1121,8 +1157,8 @@ def bulk_edit_assets():
     """Edit multiple assets at once"""
     try:
         data = request.json
-        asset_ids = data.get('asset_ids', [])
-        updates = data.get('updates', {})
+        asset_ids = data.get("asset_ids", [])
+        updates = data.get("updates", {})
 
         if not asset_ids:
             return jsonify({"message": "No assets selected"}), 400
@@ -1141,14 +1177,14 @@ def bulk_edit_assets():
                 # Prepare update payload
                 update_data = {}
 
-                if 'category' in updates:
-                    update_data['category'] = updates['category']
+                if "category" in updates:
+                    update_data["category"] = updates["category"]
 
-                if 'department_id' in updates:
-                    update_data['department_id'] = updates['department_id']
+                if "department_id" in updates:
+                    update_data["department_id"] = updates["department_id"]
 
-                if 'status' in updates:
-                    update_data['status'] = updates['status']
+                if "status" in updates:
+                    update_data["status"] = updates["status"]
 
                 # Update asset via API
                 client.update_asset(asset_id, update_data)
@@ -1159,13 +1195,18 @@ def bulk_edit_assets():
                 errors.append(f"Asset {asset_id}: {str(e)}")
                 app.logger.warning(f"Failed to update asset {asset_id}: {str(e)}")
 
-        return jsonify({
-            "success": True,
-            "message": f"Updated {success_count} asset(s). Failed: {failed_count}",
-            "success_count": success_count,
-            "failed_count": failed_count,
-            "errors": errors if errors else None
-        }), 200
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "message": f"Updated {success_count} asset(s). Failed: {failed_count}",
+                    "success_count": success_count,
+                    "failed_count": failed_count,
+                    "errors": errors if errors else None,
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         app.logger.exception(e)
@@ -1233,13 +1274,13 @@ def department_detail(id):
 @login_required
 def edit_department(id):
     # Check permissions: Admin can edit all, Manager can only edit their managed departments
-    current_user = session.get("user")
+    current_profile = session.get("user")
 
-    if current_user.get("role") != UserRole.ADMIN:
+    if current_profile.get("role") != ProfileRole.ADMIN:
         # Check if user is a manager of this department
         managed_dept_ids = [
             dept["id"]
-            for dept in current_user.get("departments", [])
+            for dept in current_profile.get("departments", [])
             if dept.get("is_manager", False)
         ]
 
@@ -1258,8 +1299,8 @@ def edit_department(id):
             }
 
             # Only admin can update user assignments
-            current_user = session.get("user")
-            if current_user and current_user.get("role") == UserRole.ADMIN:
+            current_profile = session.get("user")
+            if current_profile and current_profile.get("role") == ProfileRole.ADMIN:
                 user_ids = request.form.getlist("user_ids")
                 manager_ids = request.form.getlist("manager_ids")
                 department_data["user_ids"] = [int(u) for u in user_ids if u]
@@ -1279,7 +1320,7 @@ def edit_department(id):
         # Only admin needs users list (for assigning users to department)
         users = department["users"]
         manager_ids = department["manager_ids"]
-        current_user = session.get("user")
+        current_profile = session.get("user")
     except Exception as e:
         app.logger.exception(e)
         flash("Không thể tải thông tin phòng ban", "danger")

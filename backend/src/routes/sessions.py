@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import User, UserRole
+from models import Profile, ProfileRole
 from session_manager import session_manager
 from datetime import datetime
 
@@ -11,10 +11,10 @@ sessions_bp = Blueprint("sessions", __name__)
 @jwt_required()
 def get_sessions():
     """Get all active sessions (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - Admin access required"}), 403
 
     # Get query parameters
@@ -30,27 +30,27 @@ def get_sessions():
     # Enrich session data with user info
     enriched_sessions = []
     for session in sessions:
-        user = User.query.get(session.get('user_id'))
+        user = Profile.query.get(session.get("user_id"))
         if user:
-            session['username'] = user.username
-            session['user_fullname'] = user.fullname
-            session['user_email'] = user.email
+            session["username"] = user.username
+            session["user_fullname"] = user.fullname
+            session["user_email"] = user.email
         enriched_sessions.append(session)
 
-    return jsonify({
-        "sessions": enriched_sessions,
-        "total": len(enriched_sessions)
-    }), 200
+    return (
+        jsonify({"sessions": enriched_sessions, "total": len(enriched_sessions)}),
+        200,
+    )
 
 
 @sessions_bp.route("/<token_jti>", methods=["DELETE"])
 @jwt_required()
 def terminate_session(token_jti):
     """Terminate a specific session (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - Admin access required"}), 403
 
     # Get session info before terminating
@@ -60,11 +60,9 @@ def terminate_session(token_jti):
 
     # Terminate session in Redis
     if session_manager.terminate_session(token_jti):
-        user = User.query.get(session.get('user_id'))
-        username = user.username if user else 'Unknown'
-        return jsonify({
-            "message": f"Session terminated for user {username}"
-        }), 200
+        user = Profile.query.get(session.get("user_id"))
+        username = user.username if user else "Unknown"
+        return jsonify({"message": f"Session terminated for user {username}"}), 200
     else:
         return jsonify({"message": "Failed to terminate session"}), 500
 
@@ -73,31 +71,36 @@ def terminate_session(token_jti):
 @jwt_required()
 def terminate_user_sessions(user_id):
     """Terminate all sessions for a specific user (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - Admin access required"}), 403
 
-    user = User.query.get_or_404(user_id)
+    user = Profile.query.get_or_404(user_id)
 
     # Terminate all sessions in Redis
     terminated_count = session_manager.terminate_user_sessions(user_id)
 
-    return jsonify({
-        "message": f"Terminated {terminated_count} session(s) for user {user.username}",
-        "terminated_count": terminated_count
-    }), 200
+    return (
+        jsonify(
+            {
+                "message": f"Terminated {terminated_count} session(s) for user {user.username}",
+                "terminated_count": terminated_count,
+            }
+        ),
+        200,
+    )
 
 
 @sessions_bp.route("/stats", methods=["GET"])
 @jwt_required()
 def get_session_stats():
     """Get session statistics (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - Admin access required"}), 403
 
     # Get statistics from Redis

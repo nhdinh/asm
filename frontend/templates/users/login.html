@@ -24,12 +24,28 @@
             {% endwith %}
 
             <form method="POST" action="{{ url_for('login') }}">
+                <!-- Authentication Type Selector -->
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">
+                        Loại Xác Thực
+                    </label>
+                    <select name="auth_type" id="auth_type" onchange="handleAuthTypeChange()"
+                            class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-blue-500">
+                        <option value="local" selected>Local (Tài khoản nội bộ)</option>
+                        <option value="ad">Active Directory (AD)</option>
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Chọn phương thức xác thực phù hợp với tài khoản của bạn</p>
+                </div>
+
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2">
                         Tên đăng nhập
                     </label>
-                    <input type="text" name="username" required
+                    <input type="text" name="username" id="username" required
                            class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-blue-500">
+                    <p class="text-xs text-gray-500 mt-1" id="username_hint">
+                        Tên đăng nhập trong hệ thống
+                    </p>
                 </div>
 
                 <div class="mb-6">
@@ -49,20 +65,36 @@
                     </div>
                 </div>
 
-                <button type="submit" 
+                <button type="submit"
                         class="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 font-bold">
                     Đăng Nhập
                 </button>
             </form>
 
-            <div class="mt-4 text-center text-sm text-gray-600">
-                <p>Tài khoản mẫu:</p>
+            <div class="mt-4 text-center text-sm text-gray-600" id="sample_account">
+                <p>Tài khoản mẫu (Local):</p>
                 <p>Username: <strong>admin</strong> / Password: <strong>admin123</strong></p>
             </div>
         </div>
     </div>
 
     <script>
+        function handleAuthTypeChange() {
+            const authType = document.getElementById('auth_type').value;
+            const usernameHint = document.getElementById('username_hint');
+            const sampleAccount = document.getElementById('sample_account');
+
+            if (authType === 'ad') {
+                // Active Directory selected
+                usernameHint.textContent = 'Sử dụng tên đăng nhập Active Directory của bạn (ví dụ: domain\\username hoặc username@domain.com)';
+                sampleAccount.innerHTML = '<p class="text-blue-600">Sử dụng tài khoản Active Directory của bạn để đăng nhập</p>';
+            } else {
+                // Local authentication selected
+                usernameHint.textContent = 'Tên đăng nhập trong hệ thống';
+                sampleAccount.innerHTML = '<p>Tài khoản mẫu (Local):</p><p>Username: <strong>admin</strong> / Password: <strong>admin123</strong></p>';
+            }
+        }
+
         function togglePasswordVisibility(inputId, iconId) {
             const input = document.getElementById(inputId);
             const icon = document.getElementById(iconId);

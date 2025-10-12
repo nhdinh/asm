@@ -59,6 +59,13 @@ def create_app():
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=24)
     app.config["JWT_VERIFY_SUB"] = False
 
+    # JWT token location and header settings (for compatibility with auth service)
+    app.config["JWT_TOKEN_LOCATION"] = ["headers"]
+    app.config["JWT_HEADER_NAME"] = "Authorization"
+    app.config["JWT_HEADER_TYPE"] = "Bearer"
+    # Disable CSRF protection for API (tokens are in Authorization header)
+    app.config["JWT_COOKIE_CSRF_PROTECT"] = False
+
     # Initialize extensions
     db.init_app(app)
     jwt.init_app(app)
@@ -86,7 +93,7 @@ def create_app():
         file_handler.setLevel(logging.INFO)
         app.logger.addHandler(file_handler)
         app.logger.setLevel(logging.INFO)
-        app.logger.info("Asset Management API startup")
+        app.logger.info("Asset Management Backend API startup")
 
     # Register blueprints
     from routes.auth import auth_bp

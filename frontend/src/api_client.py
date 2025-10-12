@@ -15,6 +15,8 @@ class ApiClient:
         self.app = app
         self.base_url = app.config["API_BASE_URL"]
         self.session = requests.Session()
+        self.session.headers.update({"User-Agent": "AssetTracker-Frontend/1.0"})
+
 
         self.app.logger.info(
             f"ApiClient initialized with " + app.config["API_BASE_URL"]
@@ -83,11 +85,26 @@ class ApiClient:
             self.app.logger.error(f"DELETE {path} error: {str(e)}")
             raise
 
-    def login(self, username, password):
+    def login(self, username, password, auth_type='local'):
+        """
+        Login user with specified authentication type
+
+        Args:
+            username (str): Username
+            password (str): Password
+            auth_type (str): Authentication type - 'local' or 'ad' (default: 'local')
+
+        Returns:
+            Response object or None on error
+        """
         try:
             response = self.session.post(
                 f"{self.base_url}/auth/login",
-                json={"username": username, "password": password},
+                json={
+                    "username": username,
+                    "password": password,
+                    "auth_type": auth_type
+                },
                 timeout=10,
             )
             return response

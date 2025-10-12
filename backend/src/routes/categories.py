@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, AssetCategory, User, UserRole, UserActivity, ActivityStatus
+from models import db, AssetCategory, Profile, ProfileRole, UserActivity, ActivityStatus
 from audit_logger import audit_logger
 from pagination import paginate_query, create_pagination_response, get_sort_params
 
@@ -10,8 +10,8 @@ category_bp = Blueprint("categories", __name__)
 @category_bp.route("", methods=["GET"])
 @jwt_required()
 def get_categories():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Get sort parameters
     sort_by, sort_order = get_sort_params()
@@ -20,25 +20,25 @@ def get_categories():
     query = AssetCategory.query
 
     # Apply search filter
-    search = request.args.get('search')
+    search = request.args.get("search")
     if search:
         search_filter = f"%{search}%"
         query = query.filter(
             db.or_(
                 AssetCategory.name.ilike(search_filter),
-                AssetCategory.description.ilike(search_filter)
+                AssetCategory.description.ilike(search_filter),
             )
         )
 
     # Apply sorting
     valid_sort_fields = {
-        'name': AssetCategory.name,
-        'created_at': AssetCategory.created_at
+        "name": AssetCategory.name,
+        "created_at": AssetCategory.created_at,
     }
 
     if sort_by in valid_sort_fields:
         sort_column = valid_sort_fields[sort_by]
-        if sort_order == 'desc':
+        if sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
@@ -46,7 +46,7 @@ def get_categories():
         # Default sorting
         query = query.order_by(AssetCategory.name)
 
-    pagination_result = paginate_query(query, user=current_user)
+    pagination_result = paginate_query(query, user=current_profile)
 
     return jsonify(create_pagination_response(pagination_result, lambda c: c.to_dict()))
 
@@ -61,12 +61,17 @@ def get_category(id):
 @category_bp.route("", methods=["POST"])
 @jwt_required()
 def create_category():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Only admins can create categories
-    if current_user.role != UserRole.ADMIN:
-        return jsonify({"message": "Unauthorized - only administrators can create categories"}), 403
+    if current_profile.role != ProfileRole.ADMIN:
+        return (
+            jsonify(
+                {"message": "Unauthorized - only administrators can create categories"}
+            ),
+            403,
+        )
 
     data = request.json
 
@@ -74,18 +79,15 @@ def create_category():
     if AssetCategory.query.filter_by(name=data["name"]).first():
         return jsonify({"message": "Category already exists"}), 400
 
-    category = AssetCategory(
-        name=data["name"],
-        description=data.get("description")
-    )
+    category = AssetCategory(name=data["name"], description=data.get("description"))
 
     db.session.add(category)
     db.session.flush()  # Get category.id before commit
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="create_category",
         entity_type="asset_category",
         entity_id=category.id,
@@ -97,14 +99,14 @@ def create_category():
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
-        action='create',
-        entity_type='asset_category',
+        user_id=current_profile_id,
+        username=current_profile.username,
+        action="create",
+        entity_type="asset_category",
         entity_id=category.id,
         new_values=category.to_dict(),
         details=f"Created category {category.name}",
-        ip_address=request.remote_addr
+        ip_address=request.remote_addr,
     )
 
     return jsonify(category.to_dict()), 201
@@ -113,12 +115,17 @@ def create_category():
 @category_bp.route("/<int:id>", methods=["PUT"])
 @jwt_required()
 def update_category(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Only admins can update categories
-    if current_user.role != UserRole.ADMIN:
-        return jsonify({"message": "Unauthorized - only administrators can update categories"}), 403
+    if current_profile.role != ProfileRole.ADMIN:
+        return (
+            jsonify(
+                {"message": "Unauthorized - only administrators can update categories"}
+            ),
+            403,
+        )
 
     category = AssetCategory.query.get_or_404(id)
     data = request.json
@@ -137,8 +144,8 @@ def update_category(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="update_category",
         entity_type="asset_category",
         entity_id=category.id,
@@ -150,15 +157,15 @@ def update_category(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
-        action='update',
-        entity_type='asset_category',
+        user_id=current_profile_id,
+        username=current_profile.username,
+        action="update",
+        entity_type="asset_category",
         entity_id=category.id,
         old_values=old_values,
         new_values=category.to_dict(),
         details=f"Updated category {category.name}",
-        ip_address=request.remote_addr
+        ip_address=request.remote_addr,
     )
 
     return jsonify(category.to_dict())
@@ -167,12 +174,17 @@ def update_category(id):
 @category_bp.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
 def delete_category(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Only admins can delete categories
-    if current_user.role != UserRole.ADMIN:
-        return jsonify({"message": "Unauthorized - only administrators can delete categories"}), 403
+    if current_profile.role != ProfileRole.ADMIN:
+        return (
+            jsonify(
+                {"message": "Unauthorized - only administrators can delete categories"}
+            ),
+            403,
+        )
 
     category = AssetCategory.query.get_or_404(id)
 
@@ -187,8 +199,8 @@ def delete_category(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="delete_category",
         entity_type="asset_category",
         entity_id=id,
@@ -200,15 +212,15 @@ def delete_category(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
-        action='delete',
-        entity_type='asset_category',
+        user_id=current_profile_id,
+        username=current_profile.username,
+        action="delete",
+        entity_type="asset_category",
         entity_id=id,
         old_values=old_values,
         new_values={},
         details=f"Deleted category {category_name}",
-        ip_address=request.remote_addr
+        ip_address=request.remote_addr,
     )
 
     return "", 204

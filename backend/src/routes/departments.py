@@ -1,6 +1,6 @@
 from flask import Blueprint, current_app, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, Department, User, UserRole, UserActivity, ActivityStatus
+from models import Profile, db, Department, ProfileRole, UserActivity, ActivityStatus
 from audit_logger import audit_logger
 from pagination import paginate_query, create_pagination_response, get_sort_params
 
@@ -10,8 +10,8 @@ dept_bp = Blueprint("departments", __name__)
 @dept_bp.route("", methods=["GET"])
 @jwt_required()
 def get_departments():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Get sort parameters
     sort_by, sort_order = get_sort_params()
@@ -51,9 +51,10 @@ def get_departments():
         # Default sorting
         query = query.order_by(Department.name)
 
-    pagination_result = paginate_query(query, user=current_user)
+    pagination_result = paginate_query(query, user=current_profile)
+    response = create_pagination_response(pagination_result, lambda d: d.to_dict())
 
-    return jsonify(create_pagination_response(pagination_result, lambda d: d.to_dict()))
+    return jsonify(response)
 
 
 @dept_bp.route("/<int:id>", methods=["GET"])
@@ -66,10 +67,10 @@ def get_department(id):
 @dept_bp.route("", methods=["POST"])
 @jwt_required()
 def create_department():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     data = request.json
@@ -93,8 +94,8 @@ def create_department():
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="create_department",
         entity_type="department",
         entity_id=dept.id,
@@ -106,8 +107,8 @@ def create_department():
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="create",
         entity_type="department",
         entity_id=dept.id,
@@ -123,18 +124,18 @@ def create_department():
 @jwt_required()
 def update_department(id):
     try:
-        current_user_id = get_jwt_identity()
-        current_user = User.query.get(current_user_id)
+        current_profile_id = get_jwt_identity()
+        current_profile = Profile.query.get(current_profile_id)
 
         dept = Department.query.get_or_404(id)
 
         # Check permissions: Admin can edit all, Manager can only edit their managed departments
-        if current_user.role != UserRole.ADMIN:
+        if current_profile.role != ProfileRole.ADMIN:
             # Check if user is a manager of this department
-            from models import UserDepartment
+            from models import ProfileDepartment
 
-            is_manager = UserDepartment.query.filter_by(
-                user_id=current_user_id, department_id=id, is_manager=True
+            is_manager = ProfileDepartment.query.filter_by(
+                profile_id=current_profile_id, department_id=id, is_manager=True
             ).first()
 
             if not is_manager:
@@ -152,7 +153,7 @@ def update_department(id):
 
         # Only admin can update department members
         if "user_ids" in data:
-            if current_user.role != UserRole.ADMIN:
+            if current_profile.role != ProfileRole.ADMIN:
                 return (
                     jsonify(
                         {
@@ -162,28 +163,30 @@ def update_department(id):
                     403,
                 )
 
-            from models import UserDepartment
+            from models import ProfileDepartment
 
             # Get manager IDs from request
             manager_ids = data.get("manager_ids", [])
 
             # Clear all existing associations for this department
-            UserDepartment.query.filter_by(department_id=dept.id).delete()
+            ProfileDepartment.query.filter_by(department_id=dept.id).delete()
 
             # Add new associations with is_manager flag
-            for user_id in data["user_ids"]:
-                user = User.query.get(user_id)
+            for profile_id in data["user_ids"]:
+                user = Profile.query.get(profile_id)
                 if user:
-                    is_manager = user_id in manager_ids
-                    association = UserDepartment(
-                        user_id=user_id, department_id=dept.id, is_manager=is_manager
+                    is_manager = profile_id in manager_ids
+                    association = ProfileDepartment(
+                        profile_id=profile_id,
+                        department_id=dept.id,
+                        is_manager=is_manager,
                     )
                     db.session.add(association)
 
         # Log activity
         activity = UserActivity(
-            user_id=current_user_id,
-            username=current_user.username,
+            user_id=current_profile_id,
+            username=current_profile.username,
             action="update_department",
             entity_type="department",
             entity_id=dept.id,
@@ -195,8 +198,8 @@ def update_department(id):
 
         # Audit log
         audit_logger.log(
-            user_id=current_user_id,
-            username=current_user.username,
+            user_id=current_profile_id,
+            username=current_profile.username,
             action="update",
             entity_type="department",
             entity_id=dept.id,
@@ -218,10 +221,10 @@ def update_department(id):
 @dept_bp.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
 def delete_department(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     dept = Department.query.get_or_404(id)
@@ -244,8 +247,8 @@ def delete_department(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="delete_department",
         entity_type="department",
         entity_id=id,
@@ -257,8 +260,8 @@ def delete_department(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="delete",
         entity_type="department",
         entity_id=id,

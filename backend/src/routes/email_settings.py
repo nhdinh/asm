@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, User, UserRole, EmailConfig
+from models import db, Profile, ProfileRole, EmailConfig
 from audit_logger import audit_logger
 
 email_settings_bp = Blueprint("email_settings", __name__)
@@ -10,10 +10,10 @@ email_settings_bp = Blueprint("email_settings", __name__)
 @jwt_required()
 def get_email_config():
     """Get email configuration (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     config = EmailConfig.query.first()
@@ -43,10 +43,10 @@ def get_email_config():
 @jwt_required()
 def update_email_config():
     """Create or update email configuration (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     data = request.json
@@ -85,7 +85,7 @@ def update_email_config():
             use_ssl=data.get("use_ssl", False),
             enabled=data.get("enabled", False),
             send_welcome_email=data.get("send_welcome_email", True),
-            updated_by=current_user_id,
+            updated_by=current_profile_id,
         )
         db.session.add(config)
         action = "create"
@@ -111,15 +111,15 @@ def update_email_config():
         config.use_ssl = data.get("use_ssl", False)
         config.enabled = data.get("enabled", False)
         config.send_welcome_email = data.get("send_welcome_email", True)
-        config.updated_by = current_user_id
+        config.updated_by = current_profile_id
         action = "update"
 
     db.session.commit()
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action=action,
         entity_type="email_config",
         entity_id=config.id,
@@ -136,10 +136,10 @@ def update_email_config():
 @jwt_required()
 def test_email_config():
     """Test email configuration by sending a test email"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     config = EmailConfig.query.first()
@@ -150,22 +150,22 @@ def test_email_config():
     from email_utils import send_test_email
 
     try:
-        result = send_test_email(config, current_user.email)
+        result = send_test_email(config, current_profile.email)
         if result:
             # Audit log
             audit_logger.log(
-                user_id=current_user_id,
-                username=current_user.username,
+                user_id=current_profile_id,
+                username=current_profile.username,
                 action="test_email",
                 entity_type="email_config",
                 entity_id=config.id,
-                details=f"Test email sent successfully to {current_user.email}",
+                details=f"Test email sent successfully to {current_profile.email}",
                 ip_address=request.remote_addr,
             )
             return jsonify(
                 {
                     "message": "Test email sent successfully",
-                    "sent_to": current_user.email,
+                    "sent_to": current_profile.email,
                 }
             )
         else:
@@ -173,8 +173,8 @@ def test_email_config():
     except Exception as e:
         # Audit log
         audit_logger.log(
-            user_id=current_user_id,
-            username=current_user.username,
+            user_id=current_profile_id,
+            username=current_profile.username,
             action="test_email_failed",
             entity_type="email_config",
             entity_id=config.id,

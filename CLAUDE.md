@@ -6,13 +6,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is an Asset Management System (AMS) built with a Flask-based microservices architecture:
 
-- **Backend**: Flask REST API with SQLAlchemy ORM, JWT authentication, and PostgreSQL database
-- **Frontend**: Flask web application serving HTML templates with session-based authentication
-- **Database**: PostgreSQL with Redis for caching
+- **Authentication Service**: Dedicated JWT authentication service with Active Directory support (Port 5001)
+- **Backend**: Flask REST API with SQLAlchemy ORM and PostgreSQL database (Port 5000)
+- **Frontend**: Flask web application serving HTML templates with session-based authentication (Port 3000)
+- **Database**: PostgreSQL with Redis for token storage and caching
 - **Reverse Proxy**: Nginx for load balancing and SSL termination
 - **Testing**: Selenium-based automated testing suite with pytest
 
 ## Architecture
+
+### Authentication Service (Port 5001)
+
+- **Entry Point**: [auth/src/auth_service.py](auth/src/auth_service.py) - Dedicated authentication microservice
+- **Configuration**: [auth/src/config.py](auth/src/config.py) - Service configuration with AD settings
+- **Models**: [auth/src/models.py](auth/src/models.py) - Authentication-specific models:
+  - `User` - Minimal user model for authentication (shared with backend database)
+  - `RefreshToken` - Refresh token storage with revocation support
+  - `LoginAttempt` - Failed login tracking for account lockout
+- **Components**:
+  - [token_manager.py](auth/src/token_manager.py) - JWT access/refresh token management with Redis
+  - [ad_authenticator.py](auth/src/ad_authenticator.py) - Active Directory/LDAP authentication
+  - [routes.py](auth/src/routes.py) - Authentication API endpoints
+- **Features**:
+  - Dual authentication: Local database and Active Directory
+  - Access tokens (1 hour) and refresh tokens (30 days)
+  - Token revocation and session management
+  - Account lockout after failed attempts
+  - AD user auto-provisioning
 
 ### Backend (Port 5000)
 
@@ -126,6 +146,26 @@ pytest -v tests/
 
 ### Environment Variables
 
+**Authentication Service** ([auth/.env](auth/.env)):
+
+- `AUTH_SECRET_KEY`: Flask secret key for auth service
+- `JWT_SECRET_KEY`: Secret key for JWT token generation
+- `JWT_ACCESS_TOKEN_HOURS`: Access token expiration (default: 1 hour)
+- `JWT_REFRESH_TOKEN_DAYS`: Refresh token expiration (default: 30 days)
+- `POSTGRES_USER_FILE`: Path to file containing database username
+- `POSTGRES_PASSWORD_FILE`: Path to file containing database password
+- `REDIS_PASSWORD_FILE`: Path to file containing Redis password
+- `AD_ENABLED`: Enable Active Directory authentication (default: false)
+- `AD_SERVER`: Active Directory server hostname
+- `AD_PORT`: AD port (default: 389)
+- `AD_USE_SSL`: Use SSL for AD connection (default: false)
+- `AD_BASE_DN`: Base Distinguished Name for AD searches
+- `AD_USER_DN`: User DN template (e.g., CN={username},CN=Users,DC=domain,DC=local)
+- `AD_BIND_USER`: Service account for AD binding
+- `AD_BIND_PASSWORD`: Service account password
+- `MAX_FAILED_LOGIN_ATTEMPTS`: Max failed login attempts (default: 5)
+- `ACCOUNT_LOCKOUT_MINUTES`: Account lockout duration (default: 15)
+
 **Backend** ([backend/.env](backend/.env)):
 
 - `POSTGRES_DB`: Database name (default: asset_management)
@@ -163,14 +203,18 @@ pytest -v tests/
 
 ### Docker Services
 
+- **auth** (`ams-auth`): Authentication service on port 5001
 - **backend** (`ams-backend`): Flask API on port 5000
 - **frontend** (`ams-frontend`): Web UI on port 3000
 - **postgres** (`ams-postgres`): PostgreSQL database on port 5432
-- **redis** (`ams-redis`): Redis cache on port 6379
+- **redis** (`ams-redis`): Redis cache and token storage on port 6379
 - **nginx** (`ams-nginx`): Reverse proxy on ports 8080 (HTTP) and 443 (HTTPS)
+- **email_worker** (`ams-email-worker`): Background email service
+- **mailhog** (`ams-mailhog`): Email testing tool on ports 1025 (SMTP) and 8025 (Web UI)
 
 ### Health Checks
 
+- Auth: `GET /api/auth/health` (30s interval, 10s timeout, 3 retries, 40s start period)
 - Backend: `GET /api/health` (30s interval, 10s timeout, 3 retries, 40s start period)
 - Frontend: `GET /health` (30s interval, 10s timeout, 3 retries, 40s start period)
 
@@ -184,8 +228,19 @@ pytest -v tests/
 
 ### Database Operations
 
-- Models are auto-created via `db.create_all()` in [backend/src/app.py](backend/src/app.py) application factory
+- Models are auto-created via `db.create_all()` in [backend/src/app.py](backend/src/app.py) and [auth/src/auth_service.py](auth/src/auth_service.py)
 - Flask-Migrate integrated for schema migrations
+- **Auth Service Setup**: First time setup requires creating auth tables:
+
+  ```bash
+  # Create auth service tables (refresh_tokens, login_attempts)
+  cat auth/scripts/create_auth_tables.sql | docker-compose exec -T postgres psql -U $(cat .secrets/postgres_user.txt) -d asset_management
+
+  # Or interactively:
+  docker-compose exec postgres psql -U $(cat .secrets/postgres_user.txt) -d asset_management
+  # Then paste SQL from auth/scripts/create_auth_tables.sql
+  ```
+
 - **Schema fixes**: If database schema is out of sync with models, run the migration script:
 
   ```bash
@@ -206,15 +261,31 @@ pytest -v tests/
   flask db downgrade     # Rollback migration
   ```
 - **Default admin user**: username: `admin`, password: `admin123`
+- **Default manager user**: username: `manager`, password: `manager123`
 
-### API Authentication Flow
+### API Authentication Flow (New - Auth Service)
 
-1. Client sends credentials to `POST /api/auth/login`
+1. Client sends credentials to `POST /api/auth/login` (routed to auth service via nginx)
+2. Auth service validates credentials (local DB or Active Directory)
+3. Returns JWT access token (1h) and refresh token (30d)
+4. Client stores tokens and includes access token in requests via `Authorization: Bearer <token>` header
+5. JWT verification via `@jwt_required()` decorator on protected endpoints
+6. Token validation checked against Redis (revocation support)
+7. Failed login attempts tracked in `login_attempts` table
+8. Account locked after configurable failed attempts for configurable duration
+9. Access token refresh using `POST /api/auth/refresh` with refresh token
+10. Logout revokes tokens via `POST /api/auth/logout`
+
+### Legacy Authentication Flow (Backend - Deprecated)
+
+1. Client sends credentials to `POST /api/auth/login` (old endpoint in backend)
 2. Backend validates and returns JWT access token (24h expiration)
 3. Client stores token and includes in subsequent requests via `Authorization: Bearer <token>` header
 4. JWT verification via `@jwt_required()` decorator on protected endpoints
 5. Failed login attempts tracked in UserActivity table
 6. Account locked after configurable failed attempts for configurable duration
+
+**Note**: Migrate to new auth service for enhanced security and AD support
 
 ### Frontend Authentication Flow
 
@@ -256,6 +327,21 @@ pytest -v tests/
 
 ```
 asset_man/
+├── auth/                       # Authentication Service
+│   ├── src/
+│   │   ├── auth_service.py     # Entry point
+│   │   ├── config.py           # Configuration
+│   │   ├── models.py           # Auth models (User, RefreshToken, LoginAttempt)
+│   │   ├── routes.py           # Auth API endpoints
+│   │   ├── token_manager.py    # JWT token management with Redis
+│   │   └── ad_authenticator.py # Active Directory integration
+│   ├── scripts/
+│   │   └── create_auth_tables.sql  # Database migration
+│   ├── logs/                   # Log files
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── .env                    # Auth service config
+│   └── README.md               # Auth service documentation
 ├── backend/
 │   ├── src/
 │   │   ├── app.py              # Application factory
@@ -284,15 +370,16 @@ asset_man/
 │   ├── screenshots/            # Test screenshots
 │   └── requirements.txt
 ├── nginx/
-│   ├── nginx.conf              # Nginx configuration
+│   ├── nginx.conf              # Nginx configuration (with auth routing)
 │   ├── ssl/                    # SSL certificates
 │   └── logs/                   # Nginx logs
 ├── postgres/
 │   └── Dockerfile              # Custom PostgreSQL image
 ├── .secrets/                   # Secret files (gitignored)
-├── docker-compose.yml          # Base Docker Compose
+├── docker-compose.yml          # Base Docker Compose (includes auth service)
 ├── docker-compose.reload.yml   # Hot reload overlay
 ├── docker-compose.debug.yml    # Debug overlay
+├── .env                        # Environment variables
 └── CLAUDE.md                   # This file
 ```
 
@@ -345,13 +432,12 @@ pytest --tb=short               # Short traceback
 - Health check endpoints for monitoring
 
 # Workflow
-
+- Temporary token for admin, manager and user saved on /tmp/admin_tok.txt, /tmp/manager_tok.txt and /tmp/user_tok.txt expectively. Login with the saved token first. If the backend response that the token has expire, then make a request with `curl -s -X POST http://localhost:8080/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"$username\",\"password\":\"$password\"}"` to get the refresh token. Ensure that the token should be saved for further command.
 - Ensure that the param `-f docker-compose.yml -f docker-compose.reload.yml` be used when operating containers with docker-compose
 - The application is dockerized and running on http://localhost:8080/. Need to use `curl` to access the application.
-- Default admin user and password is "admin" and "admin123". Default manager user and password is "manager" and "manager123". Use those credentials to work with the application.
 - In frontend module, be sure to use ApiClient to make request to backend module, never use bare requests module to make request.
 - Both the backend docker instance and frontend docker instance will be reloaded and restarted when python code changed, so no need to issue a command to reload docker upon every code changing. But when template file is changed, the frontend will not restarted and reloaded, so that the command to restart frontend docker instance need to be issued.
-- When the backend docker instance is restarted, the docker log message "INFO in app: Asset Management API startup" is issued and following withs 2 lines of log contains debugger information
+- When the backend docker instance is restarted, the docker log message "INFO in app: Asset Management Backend API startup" is issued and following withs 2 lines of log contains debugger information
 - When the frontend docker instance is restarted, the docker log message "INFO in app: Asset Management Frontend startup" is issued.
 - In order to get correct log message from docker, be sure to clear log before make request, both with frontend and backend containers.
 - In anytime the template frontend\templates\*\*.html file is edited, ensure that the frontend container is restart to load changes.

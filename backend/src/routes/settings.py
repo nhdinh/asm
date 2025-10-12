@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, User, UserRole, SystemSetting
+from models import db, Profile, ProfileRole, SystemSetting
 from audit_logger import audit_logger
 
 settings_bp = Blueprint("settings", __name__)
@@ -11,53 +11,53 @@ DEFAULT_SETTINGS = {
     "login_fail_limit": {
         "value": "5",
         "description": "Số lần đăng nhập thất bại trước khi bị khóa",
-        "data_type": "int"
+        "data_type": "int",
     },
     "login_block_minutes": {
         "value": "5",
         "description": "Thời gian khóa (phút) sau khi đăng nhập thất bại quá số lần",
-        "data_type": "int"
+        "data_type": "int",
     },
     "password_min_length": {
         "value": "8",
         "description": "Độ dài tối thiểu của mật khẩu",
-        "data_type": "int"
+        "data_type": "int",
     },
     "password_require_uppercase": {
         "value": "true",
         "description": "Yêu cầu chữ hoa trong mật khẩu",
-        "data_type": "bool"
+        "data_type": "bool",
     },
     "password_require_lowercase": {
         "value": "true",
         "description": "Yêu cầu chữ thường trong mật khẩu",
-        "data_type": "bool"
+        "data_type": "bool",
     },
     "password_require_digit": {
         "value": "true",
         "description": "Yêu cầu chữ số trong mật khẩu",
-        "data_type": "bool"
+        "data_type": "bool",
     },
     "password_require_special": {
         "value": "true",
         "description": "Yêu cầu ký tự đặc biệt trong mật khẩu",
-        "data_type": "bool"
+        "data_type": "bool",
     },
     "default_items_per_page": {
         "value": "20",
         "description": "Số mục hiển thị mỗi trang (mặc định toàn hệ thống)",
-        "data_type": "int"
+        "data_type": "int",
     },
     "audit_archive_days": {
         "value": "30",
         "description": "Số ngày sau đó hệ thống sẽ lưu audit log xuống file",
-        "data_type": "int"
+        "data_type": "int",
     },
     "bad_assets_department_id": {
         "value": "1",
         "description": "Phòng ban nhận tài sản hư hỏng/thanh lý (ID phòng ban)",
-        "data_type": "int"
-    }
+        "data_type": "int",
+    },
 }
 
 
@@ -70,7 +70,7 @@ def init_default_settings():
                 key=key,
                 value=config["value"],
                 description=config["description"],
-                data_type=config["data_type"]
+                data_type=config["data_type"],
             )
             db.session.add(setting)
     db.session.commit()
@@ -80,10 +80,10 @@ def init_default_settings():
 @jwt_required()
 def get_settings():
     """Get all system settings (admin only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     # Initialize defaults if needed
@@ -97,22 +97,24 @@ def get_settings():
 @jwt_required()
 def get_setting(key):
     """Get a specific setting"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     setting = SystemSetting.query.filter_by(key=key).first()
     if not setting:
         # Return default if exists
         if key in DEFAULT_SETTINGS:
-            return jsonify({
-                "key": key,
-                "value": DEFAULT_SETTINGS[key]["value"],
-                "description": DEFAULT_SETTINGS[key]["description"],
-                "data_type": DEFAULT_SETTINGS[key]["data_type"]
-            })
+            return jsonify(
+                {
+                    "key": key,
+                    "value": DEFAULT_SETTINGS[key]["value"],
+                    "description": DEFAULT_SETTINGS[key]["description"],
+                    "data_type": DEFAULT_SETTINGS[key]["data_type"],
+                }
+            )
         return jsonify({"message": "Setting not found"}), 404
 
     return jsonify(setting.to_dict())
@@ -122,10 +124,10 @@ def get_setting(key):
 @jwt_required()
 def update_setting(key):
     """Update a setting"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     data = request.json
@@ -146,7 +148,7 @@ def update_setting(key):
             value=str(new_value),
             description=DEFAULT_SETTINGS[key]["description"],
             data_type=DEFAULT_SETTINGS[key]["data_type"],
-            updated_by=current_user_id
+            updated_by=current_profile_id,
         )
         db.session.add(setting)
         action = "create"
@@ -154,22 +156,22 @@ def update_setting(key):
     else:
         old_value = setting.value
         setting.value = str(new_value)
-        setting.updated_by = current_user_id
+        setting.updated_by = current_profile_id
         action = "update"
 
     db.session.commit()
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action=action,
-        entity_type='system_setting',
+        entity_type="system_setting",
         entity_id=setting.id,
         old_values={"value": old_value} if old_value else None,
         new_values={"value": new_value},
         details=f"Updated system setting {key} to {new_value}",
-        ip_address=request.remote_addr
+        ip_address=request.remote_addr,
     )
 
     return jsonify(setting.to_dict())
@@ -179,10 +181,10 @@ def update_setting(key):
 @jwt_required()
 def update_settings_bulk():
     """Update multiple settings at once"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     data = request.json
@@ -204,33 +206,30 @@ def update_settings_bulk():
                 value=str(value),
                 description=DEFAULT_SETTINGS[key]["description"],
                 data_type=DEFAULT_SETTINGS[key]["data_type"],
-                updated_by=current_user_id
+                updated_by=current_profile_id,
             )
             db.session.add(setting)
             old_value = None
         else:
             old_value = setting.value
             setting.value = str(value)
-            setting.updated_by = current_user_id
+            setting.updated_by = current_profile_id
 
         # Audit log
         audit_logger.log(
-            user_id=current_user_id,
-            username=current_user.username,
-            action='update',
-            entity_type='system_setting',
+            user_id=current_profile_id,
+            username=current_profile.username,
+            action="update",
+            entity_type="system_setting",
             entity_id=setting.id if setting.id else None,
             old_values={"value": old_value} if old_value else None,
             new_values={"value": value},
             details=f"Updated system setting {key} to {value}",
-            ip_address=request.remote_addr
+            ip_address=request.remote_addr,
         )
 
         updated.append(key)
 
     db.session.commit()
 
-    return jsonify({
-        "message": f"Updated {len(updated)} settings",
-        "updated": updated
-    })
+    return jsonify({"message": f"Updated {len(updated)} settings", "updated": updated})

@@ -26,9 +26,10 @@ services:
   email_worker:
     environment:
       FLASK_ENV: "development"
-      EMAIL_WORKER_POLL_INTERVAL: 2  # Faster polling in dev mode
+      EMAIL_WORKER_POLL_INTERVAL: 2 # Faster polling in dev mode
 
   adminer:
+    container_name: ams-adminer
     image: adminer
     restart: always
     ports:

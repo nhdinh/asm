@@ -1,12 +1,12 @@
-from flask import Blueprint, request, jsonify, Response
+from flask import Blueprint, current_app, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import (
+    Profile,
     db,
     Asset,
     AssetStatus,
     AssetTransfer,
-    User,
-    UserRole,
+    ProfileRole,
     UserActivity,
     ActivityStatus,
     SystemSetting,
@@ -23,7 +23,7 @@ asset_bp = Blueprint("assets", __name__)
 
 def user_has_access_to_department(user, department_id):
     """Check if user has access to a department (admin or manager of that department)"""
-    if user.role == UserRole.ADMIN:
+    if user.role == ProfileRole.ADMIN:
         return True
     user_dept_ids = [dept.id for dept in user.departments]
     return department_id in user_dept_ids
@@ -32,45 +32,59 @@ def user_has_access_to_department(user, department_id):
 @asset_bp.route("", methods=["GET"])
 @jwt_required()
 def get_assets():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Regular users (non-managers, non-admins) should use /api/my-assets endpoint
-    if current_user.role == UserRole.USER:
+    if current_profile.role == ProfileRole.USER:
         # Check if user is a manager of any department
-        is_manager = any(assoc.is_manager for assoc in current_user.department_associations)
+        is_manager = any(
+            assoc.is_manager for assoc in current_profile.department_associations
+        )
         if not is_manager:
-            return jsonify({"message": "Regular users should use /api/my-assets endpoint"}), 403
+            return (
+                jsonify(
+                    {"message": "Regular users should use /api/my-assets endpoint"}
+                ),
+                403,
+            )
 
     # Build base query - exclude soft-deleted assets by default
     include_deleted = request.args.get("include_deleted", "false").lower() == "true"
     query = Asset.query_all(include_deleted=include_deleted)
 
     # Asset access control for non-admin users (managers)
-    if current_user.role == UserRole.USER:
-        from models import UserDepartment
+    if current_profile.role == ProfileRole.USER:
+        from models import ProfileDepartment
+
         # Get departments where user is manager
-        managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+        managed_dept_ids = [
+            assoc.department_id
+            for assoc in current_profile.department_associations
+            if assoc.is_manager
+        ]
 
         if managed_dept_ids:
             # Manager can see:
             # 1. If assigned_to_user is NULL: assets in their departments
             # 2. If assigned_to_user is NOT NULL: ONLY assets assigned to users in their departments
-            query = query.outerjoin(User, Asset.assigned_to_user == User.id)
-            query = query.outerjoin(UserDepartment, User.id == UserDepartment.user_id)
+            query = query.outerjoin(User, Asset.assigned_to_user == Profile.id)
+            query = query.outerjoin(
+                ProfileDepartment, Profile.id == ProfileDepartment.profile_id
+            )
 
             query = query.filter(
                 db.or_(
                     # Assets not assigned to any user but in manager's department
                     db.and_(
                         Asset.assigned_to_user.is_(None),
-                        Asset.assigned_to_department.in_(managed_dept_ids)
+                        Asset.assigned_to_department.in_(managed_dept_ids),
                     ),
                     # Assets assigned to users in manager's departments
                     db.and_(
                         Asset.assigned_to_user.isnot(None),
-                        UserDepartment.department_id.in_(managed_dept_ids)
-                    )
+                        ProfileDepartment.department_id.in_(managed_dept_ids),
+                    ),
                 )
             )
         else:
@@ -90,29 +104,32 @@ def get_assets():
         query = query.filter(Asset.status == AssetStatus.ACTIVE)
 
     if department_id:
-        from models import UserDepartment
+        from models import ProfileDepartment
+
         # Filter assets by department
         # Show assets that meet BOTH conditions:
         # 1. If assigned_to_user is NULL: show if assigned_to_department = department_id
         # 2. If assigned_to_user is NOT NULL: show ONLY if user belongs to department_id
 
         # Need fresh joins if not already joined
-        if current_user.role != UserRole.USER:
-            query = query.outerjoin(User, Asset.assigned_to_user == User.id)
-            query = query.outerjoin(UserDepartment, User.id == UserDepartment.user_id)
+        if current_profile.role != ProfileRole.USER:
+            query = query.outerjoin(Profile, Asset.assigned_to_user == Profile.id)
+            query = query.outerjoin(
+                ProfileDepartment, Profile.id == ProfileDepartment.profile_id
+            )
 
         query = query.filter(
             db.or_(
                 # Asset not assigned to any user but in this department
                 db.and_(
                     Asset.assigned_to_user.is_(None),
-                    Asset.assigned_to_department == department_id
+                    Asset.assigned_to_department == department_id,
                 ),
                 # Asset assigned to user who belongs to this department
                 db.and_(
                     Asset.assigned_to_user.isnot(None),
-                    UserDepartment.department_id == department_id
-                )
+                    ProfileDepartment.department_id == department_id,
+                ),
             )
         )
     if status:
@@ -156,7 +173,7 @@ def get_assets():
         # Default sorting
         query = query.order_by(Asset.created_at.desc())
 
-    pagination_result = paginate_query(query, user=current_user)
+    pagination_result = paginate_query(query, user=current_profile)
 
     return jsonify(create_pagination_response(pagination_result, lambda a: a.to_dict()))
 
@@ -164,21 +181,32 @@ def get_assets():
 @asset_bp.route("", methods=["POST"])
 @jwt_required()
 def create_asset():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Regular users (non-managers) cannot create assets
-    if current_user.role == UserRole.USER:
+    if current_profile.role == ProfileRole.USER:
         # Check if user is a manager of any department
-        is_manager = any(assoc.is_manager for assoc in current_user.department_associations)
+        is_manager = any(
+            assoc.is_manager for assoc in current_profile.department_associations
+        )
         if not is_manager:
-            return jsonify({"message": "Unauthorized - regular users cannot create assets"}), 403
+            return (
+                jsonify(
+                    {"message": "Unauthorized - regular users cannot create assets"}
+                ),
+                403,
+            )
 
     data = request.json
 
     # Check permissions - Managers can only create assets for departments they manage
-    if current_user.role == UserRole.USER:
-        managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+    if current_profile.role == ProfileRole.USER:
+        managed_dept_ids = [
+            assoc.department_id
+            for assoc in current_profile.department_associations
+            if assoc.is_manager
+        ]
         if data.get("department_id") not in managed_dept_ids:
             return (
                 jsonify(
@@ -195,12 +223,14 @@ def create_asset():
     # Validate that assigned user belongs to the asset's department
     assigned_to_user = data.get("assigned_to_id") or data.get("assigned_to_user")
     if assigned_to_user:
-        assigned_user = User.query.get(assigned_to_user)
+        assigned_user = Profile.query.get(assigned_to_user)
         if not assigned_user:
             return jsonify({"message": "Assigned user not found"}), 400
 
         user_dept_ids = [dept.id for dept in assigned_user.departments]
-        assigned_to_department = data.get("department_id") or data.get("assigned_to_department")
+        assigned_to_department = data.get("department_id") or data.get(
+            "assigned_to_department"
+        )
         if assigned_to_department and assigned_to_department not in user_dept_ids:
             return (
                 jsonify(
@@ -230,7 +260,9 @@ def create_asset():
 
     # Determine assigned_to_user and assigned_to_department
     assigned_to_user = data.get("assigned_to_id") or data.get("assigned_to_user")
-    assigned_to_department = data.get("department_id") or data.get("assigned_to_department")
+    assigned_to_department = data.get("department_id") or data.get(
+        "assigned_to_department"
+    )
 
     asset = Asset(
         code=data["code"],
@@ -260,15 +292,15 @@ def create_asset():
             asset_id=asset.id,
             to_department_id=assigned_to_department,
             assigned_to_id=assigned_to_user,
-            transferred_by=current_user_id,
+            transferred_by=current_profile_id,
             notes=f"Bàn giao tài sản lần đầu tiên",
         )
         db.session.add(transfer)
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="create_asset",
         entity_type="asset",
         entity_id=asset.id,
@@ -280,8 +312,8 @@ def create_asset():
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="create",
         entity_type="asset",
         entity_id=asset.id,
@@ -296,11 +328,11 @@ def create_asset():
 @asset_bp.route("/<int:id>", methods=["PUT"])
 @jwt_required()
 def update_asset(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Only admins can edit assets
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return (
             jsonify({"message": "Unauthorized - only administrators can edit assets"}),
             403,
@@ -331,7 +363,6 @@ def update_asset(id):
                 )
                 db.session.add(category)
                 db.session.flush()  # Get the ID
-            asset.category = category_name  # Keep for backward compatibility
             asset.category_id = category.id
         else:
             asset.category = None
@@ -360,18 +391,21 @@ def update_asset(id):
     old_assigned_to = asset.assigned_to_user
 
     # Update new fields - support both old and new parameter names
-    if "assigned_to_id" in data or "assigned_to_user" in data:
-        new_assigned_to = data.get("assigned_to_id") or data.get("assigned_to_user")
+    if ("assigned_to_id" in data or "assigned_to_user" in data) and ("assigned_to_department_id" in data or "assigned_to_department" in data):
+        new_assigned_to_profile = data.get("assigned_to_id") or data.get("assigned_to_user")
+        new_assigned_to_department = data.get("assigned_to_department_id") or data.get("assigned_to_department")
 
         # Validate that assigned user belongs to the asset's department
-        if new_assigned_to is not None:
-            assigned_user = User.query.get(new_assigned_to)
+        if new_assigned_to_profile is not None and new_assigned_to_department is not None:
+            assigned_user = Profile.query.get(new_assigned_to_profile)
             if not assigned_user:
                 return jsonify({"message": "Assigned user not found"}), 400
 
-            user_dept_ids = [dept.id for dept in assigned_user.departments]
-            current_dept = asset.assigned_to_department
-            if current_dept and current_dept not in user_dept_ids:
+            profile_dept_ids = [dept.id for dept in assigned_user.departments]
+            if new_assigned_to_department  not in profile_dept_ids:
+                current_app.logger.error(
+                    "Cannot assign asset to user - user does not belong to the asset's department"
+                )
                 return (
                     jsonify(
                         {
@@ -381,28 +415,31 @@ def update_asset(id):
                     400,
                 )
 
-        asset.assigned_to_user = new_assigned_to
-    elif ("department_id" in data or "assigned_to_department" in data) and asset.assigned_to_user is not None:
-        # If only department is being updated (not assigned_to_user) and asset has an assigned user,
-        # validate that the existing user belongs to the new department
-        assigned_user = User.query.get(asset.assigned_to_user)
-        if assigned_user:
-            user_dept_ids = [dept.id for dept in assigned_user.departments]
-            new_dept = asset.assigned_to_department
-            if new_dept and new_dept not in user_dept_ids:
-                # Unassign user if they don't belong to new department
-                asset.assigned_to_user = None
+        asset.assigned_to_department = new_assigned_to_department
+        asset.assigned_to_user = new_assigned_to_profile
+    # elif (
+    #     "department_id" in data or "assigned_to_department" in data
+    # ) and asset.assigned_to_user is not None:
+    #     # If only department is being updated (not assigned_to_user) and asset has an assigned user,
+    #     # validate that the existing user belongs to the new department
+    #     assigned_user = Profile.query.get(asset.assigned_to_user)
+    #     if assigned_user:
+    #         profile_dept_ids = [dept.id for dept in assigned_user.departments]
+    #         new_dept = asset.assigned_to_department
+    #         if new_dept and new_dept not in profile_dept_ids:
+    #             # Unassign user if they don't belong to new department
+    #             asset.assigned_to_user = None
 
-        # Create transfer record if assignment changed
-        if new_assigned_to != old_assigned_to and new_assigned_to is not None:
-            transfer = AssetTransfer(
-                asset_id=asset.id,
-                to_department_id=asset.assigned_to_department,
-                assigned_to_id=new_assigned_to,
-                transferred_by=current_user_id,
-                notes=f"Bàn giao tài sản {'lần đầu tiên' if old_assigned_to is None else 'cho người dùng mới'}",
-            )
-            db.session.add(transfer)
+    # Create transfer record if assignment changed
+    if new_assigned_to_profile != old_assigned_to and new_assigned_to_profile is not None:
+        transfer = AssetTransfer(
+            asset_id=asset.id,
+            to_department_id=asset.assigned_to_department,
+            assigned_to_id=new_assigned_to_profile,
+            transferred_by=current_profile_id,
+            notes=f"Bàn giao tài sản {'lần đầu tiên' if old_assigned_to is None else 'cho người dùng mới'}",
+        )
+        db.session.add(transfer)
 
     if "condition_notes" in data:
         asset.condition_notes = data.get("condition_notes")
@@ -412,8 +449,8 @@ def update_asset(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="update_asset",
         entity_type="asset",
         entity_id=asset.id,
@@ -425,8 +462,8 @@ def update_asset(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="update",
         entity_type="asset",
         entity_id=asset.id,
@@ -442,15 +479,19 @@ def update_asset(id):
 @asset_bp.route("/<int:id>/transfer", methods=["POST"])
 @jwt_required()
 def transfer_asset(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Regular users (non-managers) cannot transfer assets
-    if current_user.role == UserRole.USER:
-        is_manager = any(assoc.is_manager for assoc in current_user.department_associations)
+    if current_profile.role == ProfileRole.USER:
+        is_manager = any(
+            assoc.is_manager for assoc in current_profile.department_associations
+        )
         if not is_manager:
             return (
-                jsonify({"message": "Unauthorized - regular users cannot transfer assets"}),
+                jsonify(
+                    {"message": "Unauthorized - regular users cannot transfer assets"}
+                ),
                 403,
             )
 
@@ -458,14 +499,22 @@ def transfer_asset(id):
     data = request.json
 
     # Check permissions
-    if current_user.role == UserRole.USER:
+    if current_profile.role == ProfileRole.USER:
         # Managers can only reassign assets within departments they manage
         # They CANNOT transfer assets to other departments
-        managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+        managed_dept_ids = [
+            assoc.department_id
+            for assoc in current_profile.department_associations
+            if assoc.is_manager
+        ]
 
         if asset.assigned_to_department not in managed_dept_ids:
             return (
-                jsonify({"message": "Unauthorized - asset is not in a department you manage"}),
+                jsonify(
+                    {
+                        "message": "Unauthorized - asset is not in a department you manage"
+                    }
+                ),
                 403,
             )
 
@@ -493,7 +542,7 @@ def transfer_asset(id):
         )
 
     # Validate that assigned user belongs to the target department
-    assigned_user = User.query.get(assigned_to_user)
+    assigned_user = Profile.query.get(assigned_to_user)
     if not assigned_user:
         return jsonify({"message": "Assigned user not found"}), 400
 
@@ -514,7 +563,7 @@ def transfer_asset(id):
         from_department_id=asset.assigned_to_department,
         to_department_id=data["to_department_id"],
         assigned_to_id=assigned_to_user,
-        transferred_by=current_user_id,
+        transferred_by=current_profile_id,
         notes=data.get("notes"),
     )
 
@@ -529,8 +578,8 @@ def transfer_asset(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="transfer_asset",
         entity_type="asset",
         entity_id=asset.id,
@@ -542,8 +591,8 @@ def transfer_asset(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="transfer",
         entity_type="asset",
         entity_id=asset.id,
@@ -562,13 +611,15 @@ def transfer_asset(id):
 @asset_bp.route("/<int:id>", methods=["GET"])
 @jwt_required()
 def get_asset(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     asset = Asset.query.get_or_404(id)
+    asset_dict = asset.to_dict()
+    current_app.logger.info(f"Asset: {asset_dict}")
 
     # Check permissions
-    if not user_has_access_to_department(current_user, asset.assigned_to_department):
+    if not user_has_access_to_department(current_profile, asset.assigned_to_department):
         return (
             jsonify({"message": "Unauthorized - no access to this asset's department"}),
             403,
@@ -580,11 +631,11 @@ def get_asset(id):
 @asset_bp.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
 def delete_asset(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Only admins can delete assets
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return (
             jsonify(
                 {"message": "Unauthorized - only administrators can delete assets"}
@@ -599,12 +650,13 @@ def delete_asset(id):
 
     # Soft delete - set deleted_at timestamp
     from datetime import datetime
+
     asset.deleted_at = datetime.utcnow()
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="delete_asset",
         entity_type="asset",
         entity_id=id,
@@ -616,8 +668,8 @@ def delete_asset(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="delete",
         entity_type="asset",
         entity_id=id,
@@ -641,10 +693,10 @@ def get_asset_history(id):
 @asset_bp.route("/sample-csv", methods=["GET"])
 @jwt_required()
 def download_sample_csv():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
     # Create sample CSV
@@ -712,10 +764,10 @@ def download_sample_csv():
 @asset_bp.route("/upload-csv", methods=["POST"])
 @jwt_required()
 def upload_assets_csv():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
 
     if "file" not in request.files:
@@ -795,7 +847,7 @@ def upload_assets_csv():
                 assigned_to_id = None
                 if row.get("assigned_to_id"):
                     assigned_to_id = int(row["assigned_to_id"])
-                    assigned_user = User.query.get(assigned_to_id)
+                    assigned_user = Profile.query.get(assigned_to_id)
                     if not assigned_user:
                         errors.append(
                             f"Row {row_num}: User ID {assigned_to_id} not found"
@@ -838,15 +890,15 @@ def upload_assets_csv():
                         asset_id=asset.id,
                         to_department_id=department_id,
                         assigned_to_id=assigned_to_id,
-                        transferred_by=current_user_id,
+                        transferred_by=current_profile_id,
                         notes=f"Initial assignment via CSV upload",
                     )
                     db.session.add(transfer)
 
                 # Log activity
                 activity = UserActivity(
-                    user_id=current_user_id,
-                    username=current_user.username,
+                    user_id=current_profile_id,
+                    username=current_profile.username,
                     action="create_asset_csv",
                     entity_type="asset",
                     entity_id=asset.id,
@@ -889,16 +941,20 @@ def mark_asset_inactive(id):
     Mark asset as damaged or disposed and transfer to bad assets department.
     Only admins and managers can perform this action.
     """
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Regular users (non-managers) cannot mark assets as inactive
-    if current_user.role == UserRole.USER:
-        is_manager = any(assoc.is_manager for assoc in current_user.department_associations)
+    if current_profile.role == ProfileRole.USER:
+        is_manager = any(
+            assoc.is_manager for assoc in current_profile.department_associations
+        )
         if not is_manager:
             return (
                 jsonify(
-                    {"message": "Unauthorized - regular users cannot mark assets as inactive"}
+                    {
+                        "message": "Unauthorized - regular users cannot mark assets as inactive"
+                    }
                 ),
                 403,
             )
@@ -915,11 +971,19 @@ def mark_asset_inactive(id):
         )
 
     # Check permissions for managers
-    if current_user.role == UserRole.USER:
-        managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+    if current_profile.role == ProfileRole.USER:
+        managed_dept_ids = [
+            assoc.department_id
+            for assoc in current_profile.department_associations
+            if assoc.is_manager
+        ]
         if asset.assigned_to_department not in managed_dept_ids:
             return (
-                jsonify({"message": "Unauthorized - asset is not in a department you manage"}),
+                jsonify(
+                    {
+                        "message": "Unauthorized - asset is not in a department you manage"
+                    }
+                ),
                 403,
             )
 
@@ -959,7 +1023,7 @@ def mark_asset_inactive(id):
             from_department_id=asset.assigned_to_department,
             to_department_id=bad_dept_id,
             assigned_to_id=None,  # Unassign from user
-            transferred_by=current_user_id,
+            transferred_by=current_profile_id,
             notes=data.get(
                 "notes",
                 f"Asset marked as {new_status} and transferred to bad assets department",
@@ -976,8 +1040,8 @@ def mark_asset_inactive(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action=f"mark_asset_{new_status}",
         entity_type="asset",
         entity_id=asset.id,
@@ -990,8 +1054,8 @@ def mark_asset_inactive(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action="update",
         entity_type="asset",
         entity_id=asset.id,
@@ -1024,23 +1088,25 @@ def mark_asset_inactive(id):
 @jwt_required()
 def propose_asset_for_liquidation(id):
     """Propose or unpropose an asset for liquidation (admin and department managers only)"""
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     asset = Asset.query.get_or_404(id)
 
     # Authorization: Admin or manager of the asset's department
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         # Check if user is manager of asset's department
         is_manager_of_dept = any(
             assoc.department_id == asset.assigned_to_department and assoc.is_manager
-            for assoc in current_user.department_associations
+            for assoc in current_profile.department_associations
         )
         if not is_manager_of_dept:
             return (
-                jsonify({
-                    "message": "Unauthorized - only admins or department managers can propose assets for liquidation"
-                }),
+                jsonify(
+                    {
+                        "message": "Unauthorized - only admins or department managers can propose assets for liquidation"
+                    }
+                ),
                 403,
             )
 
@@ -1055,10 +1121,14 @@ def propose_asset_for_liquidation(id):
     db.session.commit()
 
     # Log the activity
-    action = "propose_asset_for_liquidation" if propose else "unpropose_asset_for_liquidation"
+    action = (
+        "propose_asset_for_liquidation"
+        if propose
+        else "unpropose_asset_for_liquidation"
+    )
     audit_logger.log(
-        user_id=current_user.id,
-        username=current_user.username,
+        user_id=current_profile.id,
+        username=current_profile.username,
         action=action,
         entity_type="asset",
         entity_id=asset.id,
@@ -1068,5 +1138,9 @@ def propose_asset_for_liquidation(id):
         ip_address=request.remote_addr,
     )
 
-    message = f"Asset {asset.code} proposed for liquidation" if propose else f"Asset {asset.code} removed from liquidation proposal"
+    message = (
+        f"Asset {asset.code} proposed for liquidation"
+        if propose
+        else f"Asset {asset.code} removed from liquidation proposal"
+    )
     return jsonify({"message": message, "asset": asset.to_dict()}), 200

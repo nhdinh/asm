@@ -2,13 +2,17 @@ from datetime import datetime, time, timedelta
 import os
 import uuid
 from flask import Blueprint, json, request, jsonify, current_app
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, get_jwt
+from flask_jwt_extended import (
+    create_access_token,
+    jwt_required,
+    get_jwt_identity,
+    get_jwt,
+)
 from sqlalchemy import desc
 from models import (
     ActivityStatus,
     db,
-    User,
-    UserRole,
+    ProfileRole,
     UserActivity,
     Department,
     SystemSetting,
@@ -16,139 +20,54 @@ from models import (
 from audit_logger import audit_logger
 from password_policy import PasswordPolicy
 from session_manager import session_manager
+from auth_client import auth_client
 
 auth_bp = Blueprint("auth", __name__)
+
+# Flag to use auth service (set to True to enable)
+USE_AUTH_SERVICE = os.getenv("USE_AUTH_SERVICE", "true").lower() == "true"
 
 
 @auth_bp.route("/login", methods=["POST"])
 def login():
+    """
+    Login endpoint - proxies to auth service
+    Backend no longer handles authentication directly
+    """
     data = request.json
     username = data.get("username")
     password = data.get("password")
 
-    # Get settings from database or fallback to env/defaults
-    fail_limit_setting = SystemSetting.query.filter_by(key="login_fail_limit").first()
-    block_time_setting = SystemSetting.query.filter_by(
-        key="login_block_minutes"
-    ).first()
+    # Always use auth microservice for authentication
+    success, response_data, error_msg = auth_client.login(username, password)
 
-    failed_login_limit = (
-        fail_limit_setting.get_typed_value()
-        if fail_limit_setting
-        else int(os.getenv("LIMITED_LOGIN_LIMIT", "5"))
-    )
-    login_blocked_minutes = (
-        block_time_setting.get_typed_value()
-        if block_time_setting
-        else int(os.getenv("LOGIN_BLOCKED_TIME", "5"))
-    )
-
-    # check for last failed login
-    last_login = (
-        UserActivity.query.filter_by(username=username)
-        .order_by(desc(UserActivity.timestamp))
-        .first()
-    )
-
-    if (
-        last_login is not None
-        and last_login.status == ActivityStatus.FAILED
-        and last_login.failed_count >= failed_login_limit
-        and datetime.now() - last_login.timestamp
-        < timedelta(minutes=login_blocked_minutes)
-    ):
-        # Audit log for blocked login attempt
+    if success:
+        # Audit log for successful login
+        user_data = response_data.get("user", {})
         audit_logger.log(
-            user_id=last_login.user_id,
+            user_id=user_data.get("id"),
             username=username,
-            action="login_blocked",
-            entity_type="user",
-            details=f"Login blocked for {username} after {failed_login_limit} failed attempts. Attempts: {last_login.failed_count}",
-            ip_address=request.remote_addr,
-        )
-
-        return (
-            jsonify(
-                {
-                    "message": f"Tài khoản tạm thời bị khóa sau {failed_login_limit} lần đăng nhập sai. Vui lòng thử lại sau {login_blocked_minutes} phút."
-                }
-            ),
-            401,
-        )
-
-    # Find user
-    user = User.query.filter_by(username=username).first()
-
-    # Check if user exists and password is correct
-    access_token = None
-    if user and user.check_password(password):
-        # Generate unique JWT ID
-        jti = str(uuid.uuid4())
-        access_token = create_access_token(identity=user.id, additional_claims={"jti": jti})
-
-        # Create session record in Redis
-        session_manager.create_session(
-            user_id=user.id,
-            token_jti=jti,
-            ip_address=request.remote_addr,
-            user_agent=request.headers.get('User-Agent', ''),
-            expires_in_hours=24
-        )
-
-        # Create success activity record
-        activity = UserActivity(
-            user_id=user.id,
-            username=user.username,
-            action="login",
-            details="User logged in",
-            status=ActivityStatus.SUCCESS,
-            failed_count=0,
-        )
-        db.session.add(activity)
-        db.session.commit()
-    else:
-        # Create failed activity record (only if user exists)
-        if user:
-            activity = UserActivity(
-                user_id=user.id,
-                username=user.username,
-                action="login",
-                details="Failed login attempt",
-                status=ActivityStatus.FAILED,
-                failed_count=(
-                    last_login.failed_count + 1
-                    if last_login is not None
-                    and last_login.status == ActivityStatus.FAILED
-                    else 1
-                ),
-            )
-            db.session.add(activity)
-            db.session.commit()
-
-    # Audit log for successful login
-    if access_token:
-        audit_logger.log(
-            user_id=user.id,
-            username=user.username,
             action="login",
             entity_type="user",
-            entity_id=user.id,
-            details="User logged in successfully",
+            entity_id=user_data.get("id"),
+            details="User logged in successfully via auth service",
             ip_address=request.remote_addr,
         )
-        return jsonify({"access_token": access_token, "user": user.to_dict()}), 200
+        return jsonify(response_data), 200
     else:
         # Audit log for failed login
-        failed_count = activity.failed_count if user else 0
         audit_logger.log(
-            user_id=user.id if user else None,
+            user_id=None,
             username=username,
             action="login_failed",
             entity_type="user",
-            details=f"Failed login attempt for username: {username}. Failed count: {failed_count}/{failed_login_limit}",
+            details=f"Failed login attempt: {error_msg}",
             ip_address=request.remote_addr,
         )
-        return jsonify({"message": "Tên đăng nhập hoặc mật khẩu không đúng"}), 401
+        return (
+            jsonify({"message": error_msg or "Tên đăng nhập hoặc mật khẩu không đúng"}),
+            401,
+        )
 
 
 @auth_bp.route("/register", methods=["POST"])
@@ -157,7 +76,7 @@ def register():
     curr_user_id = get_jwt_identity()
     curr_user = User.query.get(curr_user_id)
 
-    if curr_user.role != UserRole.ADMIN:
+    if curr_user.role != ProfileRole.ADMIN:
         details = f"User {curr_user.username} try adding new user without admin role."
         log_auth_activity(action="create_user", details=details, commit=True)
 
@@ -209,10 +128,10 @@ def register():
         return jsonify({"message": "Email already exists"}), 400
 
     # Validate non-admins must belong to at least one department
-    role = UserRole[data["role"].upper()]
+    role = ProfileRole[data["role"].upper()]
     department_ids = data.get("department_ids", [])
 
-    if role != UserRole.ADMIN and (not department_ids or len(department_ids) == 0):
+    if role != ProfileRole.ADMIN and (not department_ids or len(department_ids) == 0):
         return (
             jsonify(
                 {
@@ -238,7 +157,7 @@ def register():
 
             # Add departments (many-to-many relationship) with is_manager flag
             if "department_ids" in data:
-                from models import UserDepartment
+                from models import ProfileDepartment
 
                 manager_dept_ids = data.get("manager_department_ids", [])
 
@@ -246,7 +165,7 @@ def register():
                     dept = Department.query.get(dept_id)
                     if dept:
                         is_manager = dept_id in manager_dept_ids
-                        assoc = UserDepartment(
+                        assoc = ProfileDepartment(
                             user_id=user.id,
                             department_id=dept_id,
                             is_manager=is_manager,
@@ -308,7 +227,7 @@ def reset_password():
     curr_user_id = get_jwt_identity()
     curr_user = User.query.get(curr_user_id)
 
-    if curr_user.role != UserRole.ADMIN:
+    if curr_user.role != ProfileRole.ADMIN:
         details = f"User {curr_user.username} try adding new user without admin role."
         log_auth_activity(action="create_user", details=details, commit=True)
 
@@ -510,6 +429,98 @@ def change_password():
     )
 
 
+@auth_bp.route("/logout", methods=["POST"])
+@jwt_required()
+def logout():
+    """Logout user and revoke tokens (when using auth service)"""
+    if USE_AUTH_SERVICE:
+        # Get access token from request header
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            access_token = auth_header[7:]
+
+            data = request.get_json() or {}
+            revoke_all = data.get("revoke_all", False)
+
+            success = auth_client.logout(access_token, revoke_all)
+
+            if success:
+                current_profile_id = get_jwt_identity()
+                user = User.query.get(current_profile_id)
+
+                audit_logger.log(
+                    user_id=current_profile_id,
+                    username=user.username if user else "unknown",
+                    action="logout",
+                    entity_type="user",
+                    details=f"User logged out {'(all sessions)' if revoke_all else ''}",
+                    ip_address=request.remote_addr,
+                )
+
+                return jsonify({"message": "Đăng xuất thành công"}), 200
+            else:
+                return jsonify({"message": "Đăng xuất thất bại"}), 500
+        else:
+            return jsonify({"message": "Invalid authorization header"}), 401
+    else:
+        # Legacy logout (just return success, token expires naturally)
+        current_profile_id = get_jwt_identity()
+        user = User.query.get(current_profile_id)
+
+        audit_logger.log(
+            user_id=current_profile_id,
+            username=user.username if user else "unknown",
+            action="logout",
+            entity_type="user",
+            details="User logged out",
+            ip_address=request.remote_addr,
+        )
+
+        return jsonify({"message": "Đăng xuất thành công"}), 200
+
+
+@auth_bp.route("/refresh", methods=["POST"])
+def refresh():
+    """Refresh access token (when using auth service)"""
+    if USE_AUTH_SERVICE:
+        # Get refresh token from request header or body
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            refresh_token = auth_header[7:]
+
+            success, token_data = auth_client.refresh_token(refresh_token)
+
+            if success:
+                return jsonify(token_data), 200
+            else:
+                return jsonify({"message": "Token refresh failed"}), 401
+        else:
+            return jsonify({"message": "Invalid authorization header"}), 401
+    else:
+        return jsonify({"message": "Token refresh not supported in legacy mode"}), 501
+
+
+@auth_bp.route("/sessions", methods=["GET"])
+@jwt_required()
+def get_sessions():
+    """Get active sessions for current user (when using auth service)"""
+    if USE_AUTH_SERVICE:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            access_token = auth_header[7:]
+
+            sessions_data = auth_client.get_sessions(access_token)
+
+            if sessions_data:
+                return jsonify(sessions_data), 200
+            else:
+                return jsonify({"message": "Failed to get sessions"}), 500
+        else:
+            return jsonify({"message": "Invalid authorization header"}), 401
+    else:
+        return jsonify({"message": "Sessions not supported in legacy mode"}), 501
+
+
 @jwt_required()
 def log_auth_activity(
     action: str,
@@ -517,16 +528,16 @@ def log_auth_activity(
     status: ActivityStatus = ActivityStatus.FAILED,
     commit: bool = False,
 ):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = User.query.get(current_profile_id)
 
     # create activity
     activity = UserActivity(
-        user_id=current_user_id,
-        username=current_user.username,
+        user_id=current_profile_id,
+        username=current_profile.username,
         action=action,
         entity_type="user",
-        entity_id=current_user_id,
+        entity_id=current_profile_id,
         details=details,
         status=status,
     )

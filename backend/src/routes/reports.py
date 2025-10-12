@@ -1,6 +1,14 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, Asset, Department, UserActivity, User, UserRole, AssetStatus
+from models import (
+    Profile,
+    db,
+    Asset,
+    Department,
+    UserActivity,
+    ProfileRole,
+    AssetStatus,
+)
 from sqlalchemy import func
 from datetime import datetime
 
@@ -9,7 +17,7 @@ report_bp = Blueprint("reports", __name__)
 
 def user_has_access_to_department(user, department_id):
     """Check if user has access to a department (admin or manager of that department)"""
-    if user.role == UserRole.ADMIN:
+    if user.role == ProfileRole.ADMIN:
         return True
     user_dept_ids = [dept.id for dept in user.departments]
     return department_id in user_dept_ids
@@ -18,8 +26,8 @@ def user_has_access_to_department(user, department_id):
 @report_bp.route("/assets", methods=["GET"])
 @jwt_required()
 def asset_report():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     # Get filters
     department_id = request.args.get("department_id")
@@ -31,45 +39,55 @@ def asset_report():
     query = Asset.query
 
     # Apply permission filter - managers only see assets from departments they manage
-    if current_user.role == UserRole.USER:
-        from models import UserDepartment
-        managed_dept_ids = [assoc.department_id for assoc in current_user.department_associations if assoc.is_manager]
+    if current_profile.role == ProfileRole.USER:
+        from models import ProfileDepartment
+
+        managed_dept_ids = [
+            assoc.department_id
+            for assoc in current_profile.department_associations
+            if assoc.is_manager
+        ]
         if managed_dept_ids:
-            query = query.outerjoin(User, Asset.assigned_to_user == User.id)
-            query = query.outerjoin(UserDepartment, User.id == UserDepartment.user_id)
+            query = query.outerjoin(Profile, Asset.assigned_to_user == Profile.id)
+            query = query.outerjoin(
+                ProfileDepartment, Profile.id == ProfileDepartment.profile_id
+            )
             query = query.filter(
                 db.or_(
                     # Assets not assigned to any user but in manager's department
                     db.and_(
                         Asset.assigned_to_user.is_(None),
-                        Asset.assigned_to_department.in_(managed_dept_ids)
+                        Asset.assigned_to_department.in_(managed_dept_ids),
                     ),
                     # Assets assigned to users in manager's departments
                     db.and_(
                         Asset.assigned_to_user.isnot(None),
-                        UserDepartment.department_id.in_(managed_dept_ids)
-                    )
+                        ProfileDepartment.department_id.in_(managed_dept_ids),
+                    ),
                 )
             )
 
     # Apply filters
     if department_id:
-        from models import UserDepartment
-        if current_user.role != UserRole.USER:
-            query = query.outerjoin(User, Asset.assigned_to_user == User.id)
-            query = query.outerjoin(UserDepartment, User.id == UserDepartment.user_id)
+        from models import ProfileDepartment
+
+        if current_profile.role != ProfileRole.USER:
+            query = query.outerjoin(Profile, Asset.assigned_to_user == Profile.id)
+            query = query.outerjoin(
+                ProfileDepartment, Profile.id == ProfileDepartment.profile_id
+            )
         query = query.filter(
             db.or_(
                 # Assets not assigned to any user but in this department
                 db.and_(
                     Asset.assigned_to_user.is_(None),
-                    Asset.assigned_to_department == department_id
+                    Asset.assigned_to_department == department_id,
                 ),
                 # Assets assigned to users in this department
                 db.and_(
                     Asset.assigned_to_user.isnot(None),
-                    UserDepartment.department_id == department_id
-                )
+                    ProfileDepartment.department_id == department_id,
+                ),
             )
         )
     if status:
@@ -111,14 +129,17 @@ def asset_report():
 @report_bp.route("/asset/<int:id>", methods=["GET"])
 @jwt_required()
 def single_asset_report(id):
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
     asset = Asset.query.get_or_404(id)
 
     # Check permissions
-    if not user_has_access_to_department(current_user, asset.assigned_to_department):
-        return jsonify({"message": "Unauthorized - no access to this asset's department"}), 403
+    if not user_has_access_to_department(current_profile, asset.assigned_to_department):
+        return (
+            jsonify({"message": "Unauthorized - no access to this asset's department"}),
+            403,
+        )
 
     # Get transfer history
     transfers = asset.transfers.order_by(AssetTransfer.transfer_date.desc()).all()
@@ -142,10 +163,10 @@ def single_asset_report(id):
 @report_bp.route("/user-activities", methods=["GET"])
 @jwt_required()
 def user_activity_report():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role != UserRole.ADMIN:
+    if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     # Get filters
@@ -190,13 +211,13 @@ def user_activity_report():
 @report_bp.route("/dashboard", methods=["GET"])
 @jwt_required()
 def dashboard_stats():
-    current_user_id = get_jwt_identity()
-    current_user = User.query.get(current_user_id)
+    current_profile_id = get_jwt_identity()
+    current_profile = Profile.query.get(current_profile_id)
 
-    if current_user.role == UserRole.ADMIN:
+    if current_profile.role == ProfileRole.ADMIN:
         total_assets = Asset.query.count()
         total_departments = Department.query.count()
-        total_users = User.query.count()
+        total_users = Profile.query.count()
 
         # Calculate total value
         total_value = db.session.query(func.sum(Asset.purchase_value)).scalar() or 0
@@ -211,9 +232,7 @@ def dashboard_stats():
         # Get assets by category with counts and values
         assets_by_category = (
             db.session.query(
-                Asset.category,
-                func.count(Asset.id),
-                func.sum(Asset.purchase_value)
+                Asset.category, func.count(Asset.id), func.sum(Asset.purchase_value)
             )
             .group_by(Asset.category)
             .all()
@@ -224,15 +243,20 @@ def dashboard_stats():
         )
     else:
         # Manager stats - aggregate from all their departments
-        user_dept_ids = [dept.id for dept in current_user.departments]
+        user_dept_ids = [dept.id for dept in current_profile.departments]
 
         if user_dept_ids:
-            total_assets = Asset.query.filter(Asset.assigned_to_department.in_(user_dept_ids)).count()
+            total_assets = Asset.query.filter(
+                Asset.assigned_to_department.in_(user_dept_ids)
+            ).count()
 
             # Calculate total value for manager's departments
-            total_value = db.session.query(func.sum(Asset.purchase_value)).filter(
-                Asset.assigned_to_department.in_(user_dept_ids)
-            ).scalar() or 0
+            total_value = (
+                db.session.query(func.sum(Asset.purchase_value))
+                .filter(Asset.assigned_to_department.in_(user_dept_ids))
+                .scalar()
+                or 0
+            )
 
             assets_by_status = (
                 db.session.query(Asset.status, func.count(Asset.id))
@@ -244,9 +268,7 @@ def dashboard_stats():
             # Get assets by category for manager's departments
             assets_by_category = (
                 db.session.query(
-                    Asset.category,
-                    func.count(Asset.id),
-                    func.sum(Asset.purchase_value)
+                    Asset.category, func.count(Asset.id), func.sum(Asset.purchase_value)
                 )
                 .filter(Asset.assigned_to_department.in_(user_dept_ids))
                 .group_by(Asset.category)
@@ -258,11 +280,11 @@ def dashboard_stats():
             assets_by_status = []
             assets_by_category = []
 
-        total_departments = len(current_user.departments)
-        total_users = sum(dept.users.count() for dept in current_user.departments)
+        total_departments = len(current_profile.departments)
+        total_users = sum(dept.users.count() for dept in current_profile.departments)
 
         recent_activities = (
-            UserActivity.query.filter_by(user_id=current_user_id)
+            UserActivity.query.filter_by(user_id=current_profile_id)
             .order_by(UserActivity.timestamp.desc())
             .limit(10)
             .all()
