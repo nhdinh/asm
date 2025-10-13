@@ -178,7 +178,7 @@ def refresh():
     }
     """
     try:
-        current_profile_id = get_jwt_identity()
+        current_profile_username = get_jwt_identity()
         jwt_data = get_jwt()
         refresh_jti = jwt_data.get("jti")
 
@@ -209,7 +209,9 @@ def refresh():
         refresh_token.access_token_jti = new_tokens["access_token_jti"]
         db.session.commit()
 
-        logger.info(f"Access token refreshed for user ID: {current_profile_id}")
+        logger.info(
+            f"Access token refreshed for user username: {current_profile_username}"
+        )
 
         return (
             jsonify(
@@ -279,7 +281,7 @@ def logout():
             return jsonify({"message": "Logged out successfully"}), 200
 
     except Exception as e:
-        logger.error(f"Logout error: {str(e)}", exc_info=True)
+        current_app.logger.error(f"Logout error: {str(e)}", exc_info=True)
         return jsonify({"message": "Internal server error"}), 500
 
 
@@ -296,7 +298,7 @@ def verify():
     }
     """
     try:
-        current_profile_id = get_jwt_identity()
+        current_profile_username = get_jwt_identity()
         jwt_data = get_jwt()
 
         user = User.query.get(current_profile_id)
@@ -335,7 +337,7 @@ def verify():
 def get_sessions():
     """Get all active sessions for current user"""
     try:
-        current_profile_id = get_jwt_identity()
+        current_profile_username = get_jwt_identity()
 
         token_manager = current_app.token_manager
         sessions = token_manager.get_user_active_sessions(current_profile_id)
@@ -368,7 +370,7 @@ def get_user_by_username(username):
     """
     try:
         # Get current user from JWT
-        current_profile_id = get_jwt_identity()
+        current_profile_username = get_jwt_identity()
         current_profile = User.query.get(current_profile_id)
 
         if not current_profile:
@@ -428,7 +430,7 @@ def get_user_by_id(user_id):
     """
     try:
         # Get current user from JWT
-        current_profile_id = get_jwt_identity()
+        current_profile_username = get_jwt_identity()
         current_profile = User.query.get(current_profile_id)
 
         if not current_profile:
@@ -496,7 +498,7 @@ def list_users():
     """
     try:
         # Get current user from JWT
-        current_profile_id = get_jwt_identity()
+        current_profile_username = get_jwt_identity()
         current_profile = User.query.get(current_profile_id)
 
         if not current_profile:
@@ -591,7 +593,7 @@ def create_user():
     """
     try:
         # Get current user from JWT
-        current_profile_id = get_jwt_identity()
+        current_profile_username = get_jwt_identity()
         current_profile = User.query.get(current_profile_id)
 
         if not current_profile:

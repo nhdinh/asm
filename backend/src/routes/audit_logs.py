@@ -13,8 +13,8 @@ audit_logs_bp = Blueprint("audit_logs", __name__)
 @jwt_required()
 def get_audit_logs():
     """Get audit logs from Redis (recent logs)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Only admin can view audit logs
     if current_profile.role != ProfileRole.ADMIN:
@@ -74,8 +74,8 @@ def get_audit_logs():
 @jwt_required()
 def get_archived_logs():
     """Get list of archived log files"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Only admin can view audit logs
     if current_profile.role != ProfileRole.ADMIN:
@@ -111,8 +111,8 @@ def get_archived_logs():
 @jwt_required()
 def get_archived_log_content(filename):
     """Read content from an archived log file"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Only admin can view audit logs
     if current_profile.role != ProfileRole.ADMIN:
@@ -149,8 +149,8 @@ def get_archived_log_content(filename):
 @jwt_required()
 def trigger_archive():
     """Manually trigger archival of old logs"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Only admin can trigger archive
     if current_profile.role != ProfileRole.ADMIN:
@@ -172,8 +172,8 @@ def trigger_archive():
 @jwt_required()
 def get_audit_stats():
     """Get statistics about audit logs"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Only admin can view audit logs
     if current_profile.role != ProfileRole.ADMIN:

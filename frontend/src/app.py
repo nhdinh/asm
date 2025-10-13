@@ -16,7 +16,7 @@ def create_app():
     template_folder = os.getenv("TEMPLATE_PATH", "/app/templates")
 
     app = Flask(__name__, template_folder=template_folder)
-    app.secret_key = os.getenv("SECRET_KEY", "frontend-secret-key")
+    app.secret_key = os.getenv("FRONTEND_APP_SECRET", "frontend-secret-key")
     app.config["API_BASE_URL"] = API_BASE_URL
 
     # Setup logging

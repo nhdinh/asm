@@ -10,8 +10,8 @@ category_bp = Blueprint("categories", __name__)
 @category_bp.route("", methods=["GET"])
 @jwt_required()
 def get_categories():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Get sort parameters
     sort_by, sort_order = get_sort_params()
@@ -61,8 +61,8 @@ def get_category(id):
 @category_bp.route("", methods=["POST"])
 @jwt_required()
 def create_category():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Only admins can create categories
     if current_profile.role != ProfileRole.ADMIN:
@@ -86,7 +86,7 @@ def create_category():
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="create_category",
         entity_type="asset_category",
@@ -99,7 +99,7 @@ def create_category():
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="create",
         entity_type="asset_category",
@@ -115,8 +115,8 @@ def create_category():
 @category_bp.route("/<int:id>", methods=["PUT"])
 @jwt_required()
 def update_category(id):
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Only admins can update categories
     if current_profile.role != ProfileRole.ADMIN:
@@ -144,7 +144,7 @@ def update_category(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="update_category",
         entity_type="asset_category",
@@ -157,7 +157,7 @@ def update_category(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="update",
         entity_type="asset_category",
@@ -174,8 +174,8 @@ def update_category(id):
 @category_bp.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
 def delete_category(id):
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Only admins can delete categories
     if current_profile.role != ProfileRole.ADMIN:
@@ -199,7 +199,7 @@ def delete_category(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="delete_category",
         entity_type="asset_category",
@@ -212,7 +212,7 @@ def delete_category(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="delete",
         entity_type="asset_category",

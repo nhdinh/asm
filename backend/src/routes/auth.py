@@ -11,6 +11,7 @@ from flask_jwt_extended import (
 from sqlalchemy import desc
 from models import (
     ActivityStatus,
+    Profile,
     db,
     ProfileRole,
     UserActivity,
@@ -19,13 +20,12 @@ from models import (
 )
 from audit_logger import audit_logger
 from password_policy import PasswordPolicy
-from session_manager import session_manager
 from auth_client import auth_client
 
 auth_bp = Blueprint("auth", __name__)
 
 # Flag to use auth service (set to True to enable)
-USE_AUTH_SERVICE = os.getenv("USE_AUTH_SERVICE", "true").lower() == "true"
+USE_AUTH_SERVICE = True
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -44,16 +44,37 @@ def login():
     if success:
         # Audit log for successful login
         user_data = response_data.get("user", {})
-        audit_logger.log(
-            user_id=user_data.get("id"),
-            username=username,
-            action="login",
-            entity_type="user",
-            entity_id=user_data.get("id"),
-            details="User logged in successfully via auth service",
-            ip_address=request.remote_addr,
-        )
-        return jsonify(response_data), 200
+
+        with current_app.app_context():
+            # check if user has been saved in profile data
+            profile = Profile.query.filter_by(username=user_data["username"]).first()
+            if profile is None:
+                # create new profile
+                profile = Profile(
+                    username=user_data["username"],
+                    email=user_data["email"],
+                    fullname=user_data.get("fullname", ""),
+                    role=user_data["role"],
+                    user_type=user_data["user_type"],
+                    is_ad_user=(user_data["user_type"] == "ad"),
+                )
+
+                db.session.add(profile)
+                db.session.flush()
+
+            audit_logger.log(
+                user_id=profile.id,
+                username=username,
+                action="login",
+                entity_type="user",
+                entity_id=user_data.get("id"),
+                details="User logged in successfully via auth service",
+                ip_address=request.remote_addr,
+            )
+
+            db.session.commit()
+
+            return jsonify(response_data), 200
     else:
         # Audit log for failed login
         audit_logger.log(
@@ -272,21 +293,21 @@ def get_password_policy():
 @auth_bp.route("/profile", methods=["PUT"])
 @jwt_required()
 def update_profile():
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
+    profile_username = get_jwt_identity()
+    profile = Profile.query.filter_by(username=profile_username).first()
     data = request.json
 
-    old_values = user.to_dict()
+    old_values = profile.to_dict()
 
     # Users can update their own fullname, email, and items_per_page
     if "fullname" in data:
-        user.fullname = data["fullname"]
+        profile.fullname = data["fullname"]
     if "email" in data:
         # Check if email already exists for another user
-        existing_user = User.query.filter_by(email=data["email"]).first()
-        if existing_user and existing_user.id != user.id:
+        existing_user = Profile.query.filter_by(email=data["email"]).first()
+        if existing_user and existing_user.id != profile.id:
             return jsonify({"message": "Email already exists"}), 400
-        user.email = data["email"]
+        profile.email = data["email"]
     if "items_per_page" in data:
         # Validate items_per_page value
         items_per_page = data["items_per_page"]
@@ -304,16 +325,16 @@ def update_profile():
                     )
             except (ValueError, TypeError):
                 return jsonify({"message": "Invalid items per page value"}), 400
-        user.items_per_page = items_per_page
+        profile.items_per_page = items_per_page
 
     # Log activity
     activity = UserActivity(
-        user_id=user_id,
-        username=user.username,
+        user_id=profile_username,
+        username=profile.username,
         action="update_profile",
         entity_type="user",
-        entity_id=user.id,
-        details=f"User {user.username} updated their profile",
+        entity_id=profile.id,
+        details=f"User {profile.username} updated their profile",
         status=ActivityStatus.SUCCESS,
     )
     db.session.add(activity)
@@ -321,25 +342,25 @@ def update_profile():
 
     # Audit log
     audit_logger.log(
-        user_id=user_id,
-        username=user.username,
+        user_id=profile_username,
+        username=profile.username,
         action="update_profile",
         entity_type="user",
-        entity_id=user.id,
+        entity_id=profile.id,
         old_values=old_values,
-        new_values=user.to_dict(),
-        details=f"User {user.username} updated their profile",
+        new_values=profile.to_dict(),
+        details=f"User {profile.username} updated their profile",
         ip_address=request.remote_addr,
     )
 
-    return jsonify(user.to_dict())
+    return jsonify(profile.to_dict())
 
 
 @auth_bp.route("/change-password", methods=["POST"])
 @jwt_required()
 def change_password():
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
+    profile_username = get_jwt_identity()
+    profile = Profile.query.filter_by(username=profile_username).first()
     data = request.json
 
     # Validate new password is provided
@@ -360,16 +381,16 @@ def change_password():
         )
 
     # If user must change password (first login), allow without old password
-    if not user.must_change_password:
+    if not profile.must_change_password:
         # Regular password change - verify old password
-        if not user.check_password(data.get("old_password", "")):
+        if not profile.check_password(data.get("old_password", "")):
             # Log failed attempt
             activity = UserActivity(
-                user_id=user_id,
-                username=user.username,
+                user_id=profile_username,
+                username=profile.username,
                 action="change_password",
                 entity_type="user",
-                entity_id=user.id,
+                entity_id=profile.id,
                 details=f"Failed password change attempt - incorrect old password",
                 status=ActivityStatus.FAILED,
             )
@@ -378,32 +399,32 @@ def change_password():
 
             # Audit log
             audit_logger.log(
-                user_id=user_id,
-                username=user.username,
+                user_id=profile_username,
+                username=profile.username,
                 action="change_password_failed",
                 entity_type="user",
-                entity_id=user.id,
+                entity_id=profile.id,
                 details="Failed password change attempt - incorrect old password",
                 ip_address=request.remote_addr,
             )
             return jsonify({"message": "Mật khẩu cũ không đúng"}), 400
 
     # Set new password
-    user.set_password(data["new_password"])
+    profile.set_password(data["new_password"])
 
     # Clear must_change_password flag if it was set
-    was_first_change = user.must_change_password
-    if user.must_change_password:
-        user.must_change_password = False
+    was_first_change = profile.must_change_password
+    if profile.must_change_password:
+        profile.must_change_password = False
 
     # Log activity
     activity = UserActivity(
-        user_id=user_id,
-        username=user.username,
+        user_id=profile_username,
+        username=profile.username,
         action="change_password",
         entity_type="user",
-        entity_id=user.id,
-        details=f"User {user.username} changed their password"
+        entity_id=profile.id,
+        details=f"User {profile.username} changed their password"
         + (" (first login)" if was_first_change else ""),
         status=ActivityStatus.SUCCESS,
     )
@@ -412,20 +433,20 @@ def change_password():
 
     # Audit log
     audit_logger.log(
-        user_id=user_id,
-        username=user.username,
+        user_id=profile_username,
+        username=profile.username,
         action="change_password",
         entity_type="user",
-        entity_id=user.id,
+        entity_id=profile.id,
         old_values={"password": "[REDACTED]"},
         new_values={"password": "[REDACTED]"},
-        details=f"User {user.username} changed their password"
+        details=f"User {profile.username} changed their password"
         + (" (first login)" if was_first_change else ""),
         ip_address=request.remote_addr,
     )
 
     return jsonify(
-        {"message": "Mật khẩu đã được thay đổi thành công", "user": user.to_dict()}
+        {"message": "Mật khẩu đã được thay đổi thành công", "user": profile.to_dict()}
     )
 
 
@@ -445,12 +466,14 @@ def logout():
             success = auth_client.logout(access_token, revoke_all)
 
             if success:
-                current_profile_id = get_jwt_identity()
-                user = User.query.get(current_profile_id)
+                current_profile_username = get_jwt_identity()
+                current_profile = Profile.query.filter_by(
+                    username=current_profile_username
+                )
 
                 audit_logger.log(
-                    user_id=current_profile_id,
-                    username=user.username if user else "unknown",
+                    user_id=current_profile.id,
+                    username=current_profile.username if current_profile else "unknown",
                     action="logout",
                     entity_type="user",
                     details=f"User logged out {'(all sessions)' if revoke_all else ''}",
@@ -459,16 +482,19 @@ def logout():
 
                 return jsonify({"message": "Đăng xuất thành công"}), 200
             else:
-                return jsonify({"message": "Đăng xuất thất bại"}), 500
+                return (
+                    jsonify({"message": "Đăng xuất thất bại"}),
+                    500,
+                )
         else:
             return jsonify({"message": "Invalid authorization header"}), 401
     else:
         # Legacy logout (just return success, token expires naturally)
-        current_profile_id = get_jwt_identity()
-        user = User.query.get(current_profile_id)
+        current_profile_username = get_jwt_identity()
+        user = Profile.query.filter_by(current_profile=current_profile_username)
 
         audit_logger.log(
-            user_id=current_profile_id,
+            user_id=current_profile.id,
             username=user.username if user else "unknown",
             action="logout",
             entity_type="user",
@@ -528,12 +554,12 @@ def log_auth_activity(
     status: ActivityStatus = ActivityStatus.FAILED,
     commit: bool = False,
 ):
-    current_profile_id = get_jwt_identity()
+    current_profile_username = get_jwt_identity()
     current_profile = User.query.get(current_profile_id)
 
     # create activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action=action,
         entity_type="user",

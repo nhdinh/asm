@@ -1,8 +1,8 @@
 from flask import Blueprint, current_app, request, jsonify, Response
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import get_current_user, jwt_required, get_jwt_identity
 from models import Profile, db, ProfileRole, UserActivity, Department, ActivityStatus
 from audit_logger import audit_logger
-from pagination import paginate_query, create_pagination_response, get_sort_params
+from pagination import paginate_query, get_sort_params
 import csv
 import io
 
@@ -12,8 +12,8 @@ users_bp = Blueprint("users", __name__)
 @users_bp.route("", methods=["GET"])
 @jwt_required()
 def get_users():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -104,8 +104,8 @@ def create_user():
     from flask import current_app
     from auth_client import auth_client
 
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -177,7 +177,7 @@ def create_user():
         profile = Profile(
             username=data["username"],
             email=data["email"],
-            fullname=data.get("fullname", data.get("full_name", "")),
+            fullname=data.get("fullname", ""),
             role=role,
             user_type=user_type,
             is_ad_user=(user_type == "ad"),
@@ -209,7 +209,7 @@ def create_user():
 
         # Log activity
         activity = UserActivity(
-            user_id=current_profile_id,
+            user_id=current_profile.id,
             username=current_profile.username,
             action="create",
             entity_type="user",
@@ -223,7 +223,7 @@ def create_user():
 
         # Audit log
         audit_logger.log(
-            user_id=current_profile_id,
+            user_id=current_profile.id,
             username=current_profile.username,
             action="create",
             entity_type="user",
@@ -267,8 +267,8 @@ def create_user():
 @users_bp.route("/<int:id>", methods=["GET"])
 @jwt_required()
 def get_user(id):
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN and current_profile_id != id:
         return jsonify({"message": "Unauthorized"}), 403
@@ -281,8 +281,10 @@ def get_user(id):
 @jwt_required()
 def update_user(id):
     try:
-        current_profile_id = get_jwt_identity()
-        current_profile = Profile.query.get(current_profile_id)
+        current_profile_username = get_jwt_identity()
+        current_profile = Profile.query.filter_by(
+            username=current_profile_username
+        ).first()
 
         if current_profile.role != ProfileRole.ADMIN:
             return jsonify({"message": "Unauthorized"}), 403
@@ -331,13 +333,15 @@ def update_user(id):
                 if dept:
                     is_manager = dept_id in manager_dept_ids
                     assoc = ProfileDepartment(
-                        profile_id=profile.id, department_id=dept_id, is_manager=is_manager
+                        profile_id=profile.id,
+                        department_id=dept_id,
+                        is_manager=is_manager,
                     )
                     db.session.add(assoc)
 
         # Log activity
         activity = UserActivity(
-            user_id=current_profile_id,
+            user_id=current_profile.id,
             username=current_profile.username,
             action="update_user",
             entity_type="user",
@@ -350,7 +354,7 @@ def update_user(id):
 
         # Audit log
         audit_logger.log(
-            user_id=current_profile_id,
+            user_id=current_profile.id,
             username=current_profile.username,
             action="update",
             entity_type="user",
@@ -373,8 +377,8 @@ def update_user(id):
 @users_bp.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
 def delete_user(id):
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -393,7 +397,7 @@ def delete_user(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="delete_user",
         entity_type="user",
@@ -406,7 +410,7 @@ def delete_user(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="delete",
         entity_type="user",
@@ -424,8 +428,8 @@ def delete_user(id):
 @jwt_required()
 def force_logout(id):
     """Force a user to logout by changing their password and requiring password change"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -450,7 +454,7 @@ def force_logout(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="force_logout",
         entity_type="user",
@@ -464,7 +468,7 @@ def force_logout(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="force_logout",
         entity_type="user",
@@ -486,8 +490,8 @@ def force_logout(id):
 @users_bp.route("/<int:id>/reset-password", methods=["POST"])
 @jwt_required()
 def reset_password(id):
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -506,7 +510,7 @@ def reset_password(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="reset_password",
         entity_type="user",
@@ -519,7 +523,7 @@ def reset_password(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="reset_password",
         entity_type="user",
@@ -542,8 +546,8 @@ def reset_password(id):
 @users_bp.route("/sample-csv", methods=["GET"])
 @jwt_required()
 def download_sample_csv():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -588,8 +592,8 @@ def upload_csv():
     from flask import current_app
     from auth_client import auth_client
 
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -724,7 +728,7 @@ def upload_csv():
 
                 # Log activity
                 activity = UserActivity(
-                    user_id=current_profile_id,
+                    user_id=current_profile.id,
                     username=current_profile.username,
                     action="create_user_csv",
                     entity_type="user",

@@ -8,28 +8,28 @@ import bcrypt
 import psycopg2
 from getpass import getpass
 
+
 def get_db_connection():
     """Get database connection"""
     # Read secrets
-    with open('/run/secrets/postgres_user', 'r') as f:
+    with open("/run/secrets/postgres_user", "r") as f:
         db_user = f.read().strip()
 
-    with open('/run/secrets/postgres_password', 'r') as f:
+    with open("/run/secrets/postgres_password", "r") as f:
         db_password = f.read().strip()
 
-    db_host = os.getenv('POSTGRES_HOST', 'postgres')
-    db_name = os.getenv('POSTGRES_DB', 'auth_db')
+    db_host = os.getenv("POSTGRES_HOST", "postgres")
+    db_name = os.getenv("AUTH_DB", "auth_db")
 
     return psycopg2.connect(
-        host=db_host,
-        database=db_name,
-        user=db_user,
-        password=db_password
+        host=db_host, database=db_name, user=db_user, password=db_password
     )
+
 
 def hash_password(password):
     """Hash password using bcrypt"""
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
 
 def update_password(username, new_password):
     """Update user password"""
@@ -54,7 +54,7 @@ def update_password(username, new_password):
         # Update password
         cur.execute(
             "UPDATE users SET password_hash = %s WHERE id = %s",
-            (password_hash, user_id)
+            (password_hash, user_id),
         )
 
         conn.commit()
@@ -68,6 +68,7 @@ def update_password(username, new_password):
     finally:
         cur.close()
         conn.close()
+
 
 def main():
     """Main function"""
@@ -108,6 +109,7 @@ def main():
         return 0
     else:
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

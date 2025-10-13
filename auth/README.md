@@ -32,18 +32,21 @@ auth/
 ## API Endpoints
 
 ### POST /api/auth/login
+
 Đăng nhập và nhận tokens
 
 **Request:**
+
 ```json
 {
   "username": "string",
   "password": "string",
-  "auth_type": "local|ad"  // optional, mặc định "local"
+  "auth_type": "local|ad" // optional, mặc định "local"
 }
 ```
 
 **Response:**
+
 ```json
 {
   "access_token": "eyJhbGci...",
@@ -61,14 +64,17 @@ auth/
 ```
 
 ### POST /api/auth/refresh
+
 Làm mới access token bằng refresh token
 
 **Headers:**
+
 ```
 Authorization: Bearer <refresh_token>
 ```
 
 **Response:**
+
 ```json
 {
   "access_token": "eyJhbGci...",
@@ -77,29 +83,35 @@ Authorization: Bearer <refresh_token>
 ```
 
 ### POST /api/auth/logout
+
 Đăng xuất và thu hồi tokens
 
 **Headers:**
+
 ```
 Authorization: Bearer <access_token>
 ```
 
 **Request (optional):**
+
 ```json
 {
-  "revoke_all": true  // Thu hồi tất cả phiên
+  "revoke_all": true // Thu hồi tất cả phiên
 }
 ```
 
 ### POST /api/auth/verify
+
 Xác minh token hợp lệ
 
 **Headers:**
+
 ```
 Authorization: Bearer <access_token>
 ```
 
 **Response:**
+
 ```json
 {
   "valid": true,
@@ -108,14 +120,17 @@ Authorization: Bearer <access_token>
 ```
 
 ### GET /api/auth/sessions
+
 Lấy danh sách phiên đăng nhập đang hoạt động
 
 **Headers:**
+
 ```
 Authorization: Bearer <access_token>
 ```
 
 **Response:**
+
 ```json
 {
   "sessions": [
@@ -130,6 +145,7 @@ Authorization: Bearer <access_token>
 ```
 
 ### GET /api/auth/health
+
 Health check endpoint
 
 ## Cấu hình
@@ -143,7 +159,7 @@ AUTH_SECRET_KEY=your-secret-key
 # Database
 POSTGRES_HOST=postgres
 POSTGRES_PORT=5432
-POSTGRES_DB=asset_management
+BACKEND_DB=asset_management
 POSTGRES_USER_FILE=/run/secrets/postgres_user
 POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
 
@@ -202,6 +218,7 @@ curl http://localhost:8080/api/auth/health
 ### Cấu hình AD
 
 1. Bật AD trong `.env`:
+
 ```bash
 AD_ENABLED=true
 AD_SERVER=ad.company.local
@@ -211,6 +228,7 @@ AD_USER_DN=CN={username},CN=Users,DC=company,DC=local
 ```
 
 2. Tạo service account trong AD để bind:
+
 ```bash
 AD_BIND_USER=CN=AppServiceAccount,CN=Users,DC=company,DC=local
 AD_BIND_PASSWORD=SecurePassword123
@@ -232,18 +250,21 @@ Người dùng từ AD mặc định có role `USER`. Admin cần thủ công c�
 ## Token Flow
 
 ### Access Token
+
 - Thời hạn: 1 giờ (cấu hình được)
 - Lưu trong Redis với metadata
 - Sử dụng cho mọi API request
 - Tự động revoke khi refresh
 
 ### Refresh Token
+
 - Thời hạn: 30 ngày (cấu hình được)
 - Lưu trong cả Redis và PostgreSQL
 - Chỉ dùng để làm mới access token
 - Revoke khi logout
 
 ### Revocation Strategy
+
 - Logout: Revoke cả access và refresh token của phiên
 - Logout all: Revoke tất cả tokens của user
 - Token được kiểm tra trong Redis trước khi cho phép truy cập
@@ -251,16 +272,19 @@ Người dùng từ AD mặc định có role `USER`. Admin cần thủ công c�
 ## Bảo mật
 
 ### Failed Login Protection
+
 - Giới hạn số lần đăng nhập sai (mặc định: 5 lần)
 - Khóa tài khoản tạm thời (mặc định: 15 phút)
 - Theo dõi trong bảng `login_attempts`
 
 ### Password Policy
+
 - Yêu cầu độ dài tối thiểu
 - Bắt buộc chữ hoa, chữ thường, số, ký tự đặc biệt
 - Hash bằng bcrypt
 
 ### Token Security
+
 - JWT với signature verification
 - JTI (JWT ID) duy nhất cho mỗi token
 - Lưu trữ trong Redis với TTL
@@ -269,11 +293,13 @@ Người dùng từ AD mặc định có role `USER`. Admin cần thủ công c�
 ## Monitoring
 
 ### Logs
+
 - File: `auth/logs/auth_service.log`
 - Rotating: 10MB max, 10 backups
 - Level: INFO/ERROR
 
 ### Metrics
+
 - Login attempts (success/failed)
 - Active sessions per user
 - Token refresh rate
@@ -282,6 +308,7 @@ Người dùng từ AD mặc định có role `USER`. Admin cần thủ công c�
 ## Troubleshooting
 
 ### Service không khởi động
+
 ```bash
 # Kiểm tra logs
 docker-compose logs auth
@@ -294,6 +321,7 @@ docker-compose exec auth python -c "from src.models import db; print('DB OK')"
 ```
 
 ### AD authentication lỗi
+
 ```bash
 # Test AD connection
 docker-compose exec auth python -c "
@@ -308,6 +336,7 @@ telnet <AD_SERVER> 389
 ```
 
 ### Token không hợp lệ
+
 - Kiểm tra JWT_SECRET_KEY khớp giữa auth service và các service khác
 - Xác nhận token chưa hết hạn
 - Kiểm tra token chưa bị revoke trong Redis
@@ -324,6 +353,7 @@ Backend hiện tại vẫn có auth endpoints riêng. Để migrate:
 ## Development
 
 ### Local development
+
 ```bash
 cd auth
 python -m venv venv
@@ -335,6 +365,7 @@ python src/auth_service.py
 ```
 
 ### Testing
+
 ```bash
 # Test login
 curl -X POST http://localhost:5001/api/auth/login \

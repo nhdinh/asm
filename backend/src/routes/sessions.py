@@ -11,8 +11,8 @@ sessions_bp = Blueprint("sessions", __name__)
 @jwt_required()
 def get_sessions():
     """Get all active sessions (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - Admin access required"}), 403
@@ -47,8 +47,8 @@ def get_sessions():
 @jwt_required()
 def terminate_session(token_jti):
     """Terminate a specific session (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - Admin access required"}), 403
@@ -71,8 +71,8 @@ def terminate_session(token_jti):
 @jwt_required()
 def terminate_user_sessions(user_id):
     """Terminate all sessions for a specific user (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - Admin access required"}), 403
@@ -97,8 +97,8 @@ def terminate_user_sessions(user_id):
 @jwt_required()
 def get_session_stats():
     """Get session statistics (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - Admin access required"}), 403

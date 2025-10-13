@@ -28,7 +28,6 @@ USER appuser
 
 # Set environment variables
 ENV FLASK_APP=src/backend.py
-ENV FLASK_ENV=production
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

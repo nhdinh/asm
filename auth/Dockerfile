@@ -26,4 +26,4 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=40s \
     CMD curl -f http://localhost:5001/api/auth/health || exit 1
 
 # Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--reload", "src.auth_service:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "src.auth_service:app"]

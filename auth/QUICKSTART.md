@@ -25,6 +25,7 @@ curl http://localhost:8080/api/auth/health
 ```
 
 Expected response:
+
 ```json
 {
   "status": "healthy",
@@ -47,6 +48,7 @@ curl -X POST http://localhost:8080/api/auth/login \
 ```
 
 Response:
+
 ```json
 {
   "access_token": "eyJhbGci...",
@@ -83,6 +85,7 @@ curl -X POST http://localhost:8080/api/auth/refresh \
 ```
 
 Response:
+
 ```json
 {
   "access_token": "eyJhbGci...",
@@ -211,6 +214,7 @@ tail -f auth/logs/auth_service.log
 **Nguyên nhân**: Redis chưa chạy hoặc sai password
 
 **Giải pháp**:
+
 ```bash
 # Kiểm tra Redis
 docker-compose ps redis
@@ -224,6 +228,7 @@ docker-compose exec redis redis-cli -a $(cat .secrets/redis_password.txt) ping
 **Nguyên nhân**: PostgreSQL chưa sẵn sàng hoặc sai credentials
 
 **Giải pháp**:
+
 ```bash
 # Kiểm tra PostgreSQL
 docker-compose ps postgres
@@ -237,6 +242,7 @@ docker-compose exec postgres psql -U $(cat .secrets/postgres_user.txt) -d asset_
 **Nguyên nhân**: Cấu hình AD sai hoặc không kết nối được
 
 **Giải pháp**:
+
 ```bash
 # Test kết nối AD server
 telnet <AD_SERVER> 389
@@ -250,6 +256,7 @@ docker-compose exec auth env | grep AD_
 **Nguyên nhân**: Token hết hạn hoặc bị revoke
 
 **Giải pháp**:
+
 ```bash
 # Verify token
 curl http://localhost:8080/api/auth/verify \
@@ -266,37 +273,37 @@ curl -X POST http://localhost:8080/api/auth/refresh \
 
 ```javascript
 // Login
-const response = await fetch('http://localhost:8080/api/auth/login', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+const response = await fetch("http://localhost:8080/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    username: 'admin',
-    password: 'admin123'
-  })
+    username: "admin",
+    password: "admin123",
+  }),
 });
 
 const data = await response.json();
-localStorage.setItem('access_token', data.access_token);
-localStorage.setItem('refresh_token', data.refresh_token);
+localStorage.setItem("access_token", data.access_token);
+localStorage.setItem("refresh_token", data.refresh_token);
 
 // Use token in API requests
-const apiResponse = await fetch('http://localhost:8080/api/some-endpoint', {
+const apiResponse = await fetch("http://localhost:8080/api/some-endpoint", {
   headers: {
-    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-  }
+    Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+  },
 });
 
 // Refresh token when expired
 async function refreshToken() {
-  const response = await fetch('http://localhost:8080/api/auth/refresh', {
-    method: 'POST',
+  const response = await fetch("http://localhost:8080/api/auth/refresh", {
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('refresh_token')}`
-    }
+      Authorization: `Bearer ${localStorage.getItem("refresh_token")}`,
+    },
   });
 
   const data = await response.json();
-  localStorage.setItem('access_token', data.access_token);
+  localStorage.setItem("access_token", data.access_token);
 }
 ```
 
@@ -309,7 +316,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 @app.route('/api/protected')
 @jwt_required()
 def protected_route():
-    current_profile_id = get_jwt_identity()
+    current_profile_username = get_jwt_identity()
     # Use current_profile_id to fetch user details
     return {'user_id': current_profile_id}
 ```

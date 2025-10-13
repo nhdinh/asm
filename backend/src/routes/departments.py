@@ -10,8 +10,8 @@ dept_bp = Blueprint("departments", __name__)
 @dept_bp.route("", methods=["GET"])
 @jwt_required()
 def get_departments():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Get sort parameters
     sort_by, sort_order = get_sort_params()
@@ -67,8 +67,8 @@ def get_department(id):
 @dept_bp.route("", methods=["POST"])
 @jwt_required()
 def create_department():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -94,7 +94,7 @@ def create_department():
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="create_department",
         entity_type="department",
@@ -107,7 +107,7 @@ def create_department():
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="create",
         entity_type="department",
@@ -124,8 +124,10 @@ def create_department():
 @jwt_required()
 def update_department(id):
     try:
-        current_profile_id = get_jwt_identity()
-        current_profile = Profile.query.get(current_profile_id)
+        current_profile_username = get_jwt_identity()
+        current_profile = Profile.query.filter_by(
+            username=current_profile_username
+        ).first()
 
         dept = Department.query.get_or_404(id)
 
@@ -135,7 +137,7 @@ def update_department(id):
             from models import ProfileDepartment
 
             is_manager = ProfileDepartment.query.filter_by(
-                profile_id=current_profile_id, department_id=id, is_manager=True
+                profile_id=current_profile.id, department_id=id, is_manager=True
             ).first()
 
             if not is_manager:
@@ -185,7 +187,7 @@ def update_department(id):
 
         # Log activity
         activity = UserActivity(
-            user_id=current_profile_id,
+            user_id=current_profile.id,
             username=current_profile.username,
             action="update_department",
             entity_type="department",
@@ -198,7 +200,7 @@ def update_department(id):
 
         # Audit log
         audit_logger.log(
-            user_id=current_profile_id,
+            user_id=current_profile.id,
             username=current_profile.username,
             action="update",
             entity_type="department",
@@ -221,8 +223,8 @@ def update_department(id):
 @dept_bp.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
 def delete_department(id):
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -247,7 +249,7 @@ def delete_department(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="delete_department",
         entity_type="department",
@@ -260,7 +262,7 @@ def delete_department(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="delete",
         entity_type="department",

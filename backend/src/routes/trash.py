@@ -11,8 +11,8 @@ trash_bp = Blueprint("trash", __name__)
 @jwt_required()
 def get_deleted_users():
     """Get all soft-deleted users (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -41,8 +41,8 @@ def get_deleted_users():
 @jwt_required()
 def get_deleted_departments():
     """Get all soft-deleted departments (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -73,8 +73,8 @@ def get_deleted_departments():
 @jwt_required()
 def get_deleted_assets():
     """Get all soft-deleted assets (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -103,8 +103,8 @@ def get_deleted_assets():
 @jwt_required()
 def restore_user(id):
     """Restore a soft-deleted user (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -143,8 +143,8 @@ def restore_user(id):
 @jwt_required()
 def restore_department(id):
     """Restore a soft-deleted department (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -183,8 +183,8 @@ def restore_department(id):
 @jwt_required()
 def restore_asset(id):
     """Restore a soft-deleted asset (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -223,8 +223,8 @@ def restore_asset(id):
 @jwt_required()
 def permanent_delete_user(id):
     """Permanently delete a user (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -256,8 +256,8 @@ def permanent_delete_user(id):
 @jwt_required()
 def permanent_delete_department(id):
     """Permanently delete a department (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -289,8 +289,8 @@ def permanent_delete_department(id):
 @jwt_required()
 def permanent_delete_asset(id):
     """Permanently delete an asset (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403

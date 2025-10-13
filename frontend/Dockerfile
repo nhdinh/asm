@@ -21,8 +21,6 @@ EXPOSE 3000
 
 # Set environment variables
 ENV FLASK_APP=frontend.py
-ENV FLASK_ENV=production
-ENV API_BASE_URL=http://backend:5000
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

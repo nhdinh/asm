@@ -10,8 +10,8 @@ email_settings_bp = Blueprint("email_settings", __name__)
 @jwt_required()
 def get_email_config():
     """Get email configuration (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -43,8 +43,8 @@ def get_email_config():
 @jwt_required()
 def update_email_config():
     """Create or update email configuration (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -118,7 +118,7 @@ def update_email_config():
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action=action,
         entity_type="email_config",
@@ -136,8 +136,8 @@ def update_email_config():
 @jwt_required()
 def test_email_config():
     """Test email configuration by sending a test email"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -154,7 +154,7 @@ def test_email_config():
         if result:
             # Audit log
             audit_logger.log(
-                user_id=current_profile_id,
+                user_id=current_profile.id,
                 username=current_profile.username,
                 action="test_email",
                 entity_type="email_config",
@@ -173,7 +173,7 @@ def test_email_config():
     except Exception as e:
         # Audit log
         audit_logger.log(
-            user_id=current_profile_id,
+            user_id=current_profile.id,
             username=current_profile.username,
             action="test_email_failed",
             entity_type="email_config",

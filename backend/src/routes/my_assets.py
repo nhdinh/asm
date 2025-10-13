@@ -9,8 +9,8 @@ my_assets_bp = Blueprint("my_assets", __name__)
 @jwt_required()
 def get_my_assets():
     """Get assets assigned to the current user (for viewers)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Regular users (non-managers) can only see their own assets
     # Managers and admins can use regular asset endpoints
@@ -68,8 +68,8 @@ def get_my_assets():
 @jwt_required()
 def get_my_stats():
     """Get statistics for current user's assigned assets"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role == ProfileRole.USER:
         is_manager = any(

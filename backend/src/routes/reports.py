@@ -26,8 +26,8 @@ def user_has_access_to_department(user, department_id):
 @report_bp.route("/assets", methods=["GET"])
 @jwt_required()
 def asset_report():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Get filters
     department_id = request.args.get("department_id")
@@ -129,8 +129,8 @@ def asset_report():
 @report_bp.route("/asset/<int:id>", methods=["GET"])
 @jwt_required()
 def single_asset_report(id):
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     asset = Asset.query.get_or_404(id)
 
@@ -163,8 +163,8 @@ def single_asset_report(id):
 @report_bp.route("/user-activities", methods=["GET"])
 @jwt_required()
 def user_activity_report():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -211,8 +211,8 @@ def user_activity_report():
 @report_bp.route("/dashboard", methods=["GET"])
 @jwt_required()
 def dashboard_stats():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role == ProfileRole.ADMIN:
         total_assets = Asset.query.count()

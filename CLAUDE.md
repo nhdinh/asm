@@ -116,14 +116,14 @@ export FLASK_APP=src/backend.py
 export FLASK_ENV=development
 export POSTGRES_USER_FILE=path/to/.secrets/postgres_user.txt
 export POSTGRES_PASSWORD_FILE=path/to/.secrets/postgres_password.txt
-export JWT_SECRET_KEY=your-secret-key
+export BACKEND_JWT_SECRET=your-secret-key
 python src/backend.py
 
 # Frontend setup
 cd frontend
 pip install -r requirements.txt
 export API_BASE_URL=http://localhost:5000/api
-export SECRET_KEY=your-frontend-secret
+export FRONTEND_APP_SECRET=your-frontend-secret
 python -m gunicorn --bind 0.0.0.0:3000 --reload --workers 2 src.frontend:app
 ```
 
@@ -146,15 +146,49 @@ pytest -v tests/
 
 ### Environment Variables
 
-**Authentication Service** ([auth/.env](auth/.env)):
+**Root Environment File** (.env in project root):
 
-- `AUTH_SECRET_KEY`: Flask secret key for auth service
-- `JWT_SECRET_KEY`: Secret key for JWT token generation
-- `JWT_ACCESS_TOKEN_HOURS`: Access token expiration (default: 1 hour)
-- `JWT_REFRESH_TOKEN_DAYS`: Refresh token expiration (default: 30 days)
-- `POSTGRES_USER_FILE`: Path to file containing database username
-- `POSTGRES_PASSWORD_FILE`: Path to file containing database password
-- `REDIS_PASSWORD_FILE`: Path to file containing Redis password
+Core application secrets and database configuration:
+- `AUTH_DB`: Database name for Auth service (default: auth_db)
+- `AUTH_JWT_SECRET`: JWT secret key for authentication service
+- `AUTH_APP_SECRET`: Flask secret key for authentication service
+- `BACKEND_DB`: Database name for Backend service (default: asset_management)
+- `BACKEND_JWT_SECRET`: JWT secret key for backend service
+- `FRONTEND_APP_SECRET`: Session secret key for frontend
+- `REDIS_PASSWORD`: Redis authentication password
+- `DB_LOCATION`: Host path for PostgreSQL database volume (default: ../asset_db/)
+
+Active Directory configuration (optional):
+- `AD_DOMAIN`: Active Directory domain name (default: ASSETMAN)
+- `AD_REALM`: Active Directory realm (default: ASSETMAN.LOCAL)
+- `AD_ADMIN_PASSWORD`: AD administrator password (default: Admin@123456)
+- `AD_DEFAULT_PASSWORD`: AD default user password (default: User@123456)
+- `AD_DNS_FORWARDER`: DNS forwarder for AD (default: 8.8.8.8)
+- `AD_HOST_IP`: Static IP for AD container (default: 172.18.0.100)
+- `AD_ENABLED`: Enable AD authentication in auth service (default: false)
+- `AD_SERVER`: AD server hostname
+- `AD_PORT`: AD server port (default: 389)
+- `AD_USE_SSL`: Use SSL for AD connection (default: false)
+- `AD_BASE_DN`: AD base Distinguished Name
+- `AD_USER_DN`: AD user DN template
+- `AD_BIND_USER`: AD bind user for service account
+- `AD_BIND_PASSWORD`: AD bind password
+
+**Authentication Service** (environment configured in docker-compose.yml):
+
+- `FLASK_ENV`: Flask environment mode (default: production)
+- `AUTH_APP_SECRET`: Flask secret key (from root .env)
+- `AUTH_JWT_SECRET`: JWT secret key (from root .env)
+- `AUTH_DB`: Database name (from root .env)
+- `POSTGRES_HOST`: Database host (default: postgres)
+- `POSTGRES_PORT`: Database port (default: 5432)
+- `POSTGRES_USER_FILE`: Docker secret file path (default: /run/secrets/postgres_user)
+- `POSTGRES_PASSWORD_FILE`: Docker secret file path (default: /run/secrets/postgres_password)
+- `REDIS_HOST`: Redis server host (default: redis)
+- `REDIS_PORT`: Redis server port (default: 6379)
+- `REDIS_PASSWORD_FILE`: Docker secret file path (default: /run/secrets/redis_password)
+- `JWT_ACCESS_TOKEN_HOURS`: Access token expiration in hours (default: 1)
+- `JWT_REFRESH_TOKEN_DAYS`: Refresh token expiration in days (default: 30)
 - `AD_ENABLED`: Enable Active Directory authentication (default: false)
 - `AD_SERVER`: Active Directory server hostname
 - `AD_PORT`: AD port (default: 389)
@@ -163,34 +197,62 @@ pytest -v tests/
 - `AD_USER_DN`: User DN template (e.g., CN={username},CN=Users,DC=domain,DC=local)
 - `AD_BIND_USER`: Service account for AD binding
 - `AD_BIND_PASSWORD`: Service account password
+- `AD_USER_SEARCH_FILTER`: LDAP filter for user search (default: (sAMAccountName={username}))
+- `AD_GROUP_SEARCH_FILTER`: LDAP filter for group search (default: (member={user_dn}))
 - `MAX_FAILED_LOGIN_ATTEMPTS`: Max failed login attempts (default: 5)
-- `ACCOUNT_LOCKOUT_MINUTES`: Account lockout duration (default: 15)
+- `ACCOUNT_LOCKOUT_MINUTES`: Account lockout duration in minutes (default: 15)
+- `CORS_ORIGINS`: Allowed CORS origins, comma-separated (default: *)
 
-**Backend** ([backend/.env](backend/.env)):
+**Backend Service** (environment configured in docker-compose.yml):
 
-- `POSTGRES_DB`: Database name (default: asset_management)
+- `FLASK_ENV`: Flask environment mode (default: production)
+- `BACKEND_JWT_SECRET`: JWT secret key (from root .env)
+- `BACKEND_DB`: Database name (from root .env)
 - `POSTGRES_HOST`: Database host (default: postgres)
-- `POSTGRES_USER_FILE`: Path to file containing database username
-- `POSTGRES_PASSWORD_FILE`: Path to file containing database password
-- `JWT_SECRET_KEY`: Secret key for JWT token generation
-- `LIMITED_LOGIN_LIMIT`: Max failed login attempts before lockout (default: 5)
-- `LOGIN_BLOCKED_TIME`: Account lockout duration in minutes (default: 1)
-- `FLASK_ENV`: Environment (development)
+- `POSTGRES_USER_FILE`: Docker secret file path (default: /run/secrets/postgres_user)
+- `POSTGRES_PASSWORD_FILE`: Docker secret file path (default: /run/secrets/postgres_password)
+- `REDIS_HOST`: Redis server host (default: redis)
+- `REDIS_PORT`: Redis server port (default: 6379)
+- `REDIS_PASSWORD_FILE`: Docker secret file path (default: /run/secrets/redis_password)
+- `USE_AUTH_SERVICE`: Enable authentication service integration (default: true)
+- `AUTH_SERVICE_URL`: Authentication service URL (default: http://auth:5001/api/auth)
 
-**Frontend**:
+**Frontend Service** (environment configured in docker-compose.yml):
 
+- `FLASK_ENV`: Flask environment mode (default: production)
 - `API_BASE_URL`: Backend API URL (default: http://backend:5000/api)
-- `SECRET_KEY`: Session encryption key
+- `FRONTEND_APP_SECRET`: Session encryption key (from root .env)
 - `TEMPLATE_PATH`: Path to templates directory (default: /app/templates)
-- `FLASK_ENV`: Environment (development)
 
-**Docker Compose** (.env in root):
+**Email Worker Service** (environment configured in docker-compose.yml):
 
-- `BACKEND_JWT_SECRET_KEY`: JWT secret for backend
-- `FRONTEND_APP_SECRET`: Session secret for frontend
-- `POSTGRES_DB`: Database name
-- `POSTGRES_DB_LOCATION`: Host path for database volume
-- `REDIS_PASSWORD`: Redis authentication password
+- `FLASK_ENV`: Flask environment mode (default: production)
+- `BACKEND_JWT_SECRET`: JWT secret (from root .env)
+- `BACKEND_DB`: Database name (from root .env)
+- `POSTGRES_USER_FILE`: Docker secret file path (default: /run/secrets/postgres_user)
+- `POSTGRES_PASSWORD_FILE`: Docker secret file path (default: /run/secrets/postgres_password)
+- `REDIS_HOST`: Redis server host (default: redis)
+- `REDIS_PORT`: Redis server port (default: 6379)
+- `REDIS_PASSWORD_FILE`: Docker secret file path (default: /run/secrets/redis_password)
+- `EMAIL_WORKER_POLL_INTERVAL`: Seconds between queue polls (default: 5)
+- `EMAIL_WORKER_BATCH_SIZE`: Max tasks to process per iteration (default: 10)
+- `EMAIL_WORKER_ONE_SHOT`: Run once and exit, for testing (default: false)
+
+**Samba AD Service** (environment configured in docker-compose.yml):
+
+- `DOMAIN`: Active Directory domain name (from root .env, default: ASSETMAN)
+- `REALM`: Active Directory realm (from root .env, default: ASSETMAN.LOCAL)
+- `ADMIN_PASSWORD`: Administrator password (from root .env, default: Admin@123456)
+- `DEFAULT_PASSWORD`: Default user password (from root .env, default: User@123456)
+- `DNS_FORWARDER`: DNS forwarder address (from root .env, default: 8.8.8.8)
+- `HOST_IP`: Static IP address for container (from root .env, default: 172.18.0.100)
+
+**Automated Tests** (automated_tests/.env):
+
+- `user`: Regular user username for testing (default: admin)
+- `user_password`: Regular user password for testing (default: admin123)
+- `admin`: Admin username for testing (default: admin)
+- `admin_password`: Admin password for testing (default: admin123)
 
 ### Secrets Management
 
@@ -199,7 +261,9 @@ pytest -v tests/
   - `.secrets/postgres_user.txt` - Database username
   - `.secrets/postgres_password.txt` - Database password
   - `.secrets/redis_password.txt` - Redis password
+  - `.secrets/smtp_password.txt` - SMTP server password (for email functionality)
 - Secrets mounted as Docker secrets in containers at `/run/secrets/`
+- Docker secrets are referenced in docker-compose.yml and mounted at runtime
 
 ### Docker Services
 
@@ -209,8 +273,9 @@ pytest -v tests/
 - **postgres** (`ams-postgres`): PostgreSQL database on port 5432
 - **redis** (`ams-redis`): Redis cache and token storage on port 6379
 - **nginx** (`ams-nginx`): Reverse proxy on ports 8080 (HTTP) and 443 (HTTPS)
-- **email_worker** (`ams-email-worker`): Background email service
+- **email_worker** (`ams-email-worker`): Background email service for processing email queue
 - **mailhog** (`ams-mailhog`): Email testing tool on ports 1025 (SMTP) and 8025 (Web UI)
+- **samba-ad** (`ams-samba-ad`): Active Directory testing environment on ports 10053 (DNS), 10088 (Kerberos), 10389 (LDAP), 10445 (SMB), 10464 (Kerberos Password), 10636 (LDAPS), 13268 (Global Catalog), 13269 (Global Catalog SSL)
 
 ### Health Checks
 
@@ -432,6 +497,7 @@ pytest --tb=short               # Short traceback
 - Health check endpoints for monitoring
 
 # Workflow
+
 - Temporary token for admin, manager and user saved on /tmp/admin_tok.txt, /tmp/manager_tok.txt and /tmp/user_tok.txt expectively. Login with the saved token first. If the backend response that the token has expire, then make a request with `curl -s -X POST http://localhost:8080/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"$username\",\"password\":\"$password\"}"` to get the refresh token. Ensure that the token should be saved for further command.
 - Ensure that the param `-f docker-compose.yml -f docker-compose.reload.yml` be used when operating containers with docker-compose
 - The application is dockerized and running on http://localhost:8080/. Need to use `curl` to access the application.

@@ -29,9 +29,9 @@ services:
       - ./auth/.env:/app/.env
     environment:
       FLASK_ENV: production
-      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
-      JWT_SECRET_KEY: ${AUTH_JWT_SECRET_KEY}
-      POSTGRES_DB: ${AUTH_POSTGRES_DB}
+      AUTH_APP_SECRET: ${AUTH_APP_SECRET}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
+      AUTH_DB: ${AUTH_DB}
       POSTGRES_HOST: postgres
       POSTGRES_USER_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
@@ -83,8 +83,8 @@ services:
       - ./backend/.env:/app/.env
     environment:
       FLASK_ENV: production
-      JWT_SECRET_KEY: ${BACKEND_JWT_SECRET_KEY}
-      POSTGRES_DB: ${POSTGRES_DB}
+      BACKEND_JWT_SECRET: ${AUTH_JWT_SECRET}
+      BACKEND_DB: ${BACKEND_DB}
       POSTGRES_USER_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       REDIS_HOST: redis
@@ -121,7 +121,7 @@ services:
     environment:
       FLASK_ENV: production
       API_BASE_URL: http://backend:5000/api
-      SECRET_KEY: ${FRONTEND_APP_SECRET}
+      FRONTEND_APP_SECRET: ${FRONTEND_APP_SECRET}
     restart: unless-stopped
     depends_on:
       - backend
@@ -160,14 +160,14 @@ services:
     container_name: ams-postgres
     secrets:
       - postgres_user
-      - postgres_password # TODO: change temporary password in postgres init file
+      - postgres_password
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      AUTH_POSTGRES_DB: ${AUTH_POSTGRES_DB}
+      BACKEND_DB: ${BACKEND_DB}
+      AUTH_DB: ${AUTH_DB}
       POSTGRES_USER_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     volumes:
-      - ${POSTGRES_DB_LOCATION}:/var/lib/postgresql/data
+      - ${DB_LOCATION}:/var/lib/postgresql/data
     ports:
       - 5432:5432
     restart: unless-stopped
@@ -205,8 +205,8 @@ services:
       - ./backend/.env:/app/.env
     environment:
       FLASK_ENV: production
-      JWT_SECRET_KEY: ${BACKEND_JWT_SECRET_KEY}
-      POSTGRES_DB: ${POSTGRES_DB}
+      BACKEND_JWT_SECRET: ${BACKEND_JWT_SECRET}
+      BACKEND_DB: ${BACKEND_DB}
       POSTGRES_USER_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       REDIS_HOST: redis

@@ -1,4 +1,13 @@
 services:
+  auth:
+    environment:
+      FLASK_ENV: "development"
+    command:
+      - "sh"
+      - "-c"
+      - |
+        python -m gunicorn --bind=0.0.0.0:5001 --workers=2 --reload src.auth_service:app
+
   backend:
     ports:
       - 5678:5678

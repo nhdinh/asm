@@ -80,8 +80,8 @@ def init_default_settings():
 @jwt_required()
 def get_settings():
     """Get all system settings (admin only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -97,8 +97,8 @@ def get_settings():
 @jwt_required()
 def get_setting(key):
     """Get a specific setting"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -124,8 +124,8 @@ def get_setting(key):
 @jwt_required()
 def update_setting(key):
     """Update a setting"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -163,7 +163,7 @@ def update_setting(key):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action=action,
         entity_type="system_setting",
@@ -181,8 +181,8 @@ def update_setting(key):
 @jwt_required()
 def update_settings_bulk():
     """Update multiple settings at once"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
@@ -217,7 +217,7 @@ def update_settings_bulk():
 
         # Audit log
         audit_logger.log(
-            user_id=current_profile_id,
+            user_id=current_profile.id,
             username=current_profile.username,
             action="update",
             entity_type="system_setting",

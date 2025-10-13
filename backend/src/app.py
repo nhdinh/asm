@@ -1,5 +1,5 @@
 from logging.handlers import RotatingFileHandler
-from flask import Flask
+from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
@@ -34,17 +34,11 @@ with open(os.environ["POSTGRES_PASSWORD_FILE"], "r") as f:
     db_password = f.read()
 
 db_host = os.getenv("POSTGRES_HOST", "postgres")
-db_name = os.getenv("POSTGRES_DB", "asset_man")
+db_name = os.getenv("BACKEND_DB", "asset_man")
 
 
 if db_user is None or db_password is None:
     exit(10)
-
-
-def save_env(key: str, val: str):
-    set_key(dotenv_path=ENV_PATH, key_to_set=key, value_to_set=val)
-
-    load_dotenv()
 
 
 def create_app():
@@ -55,7 +49,7 @@ def create_app():
         f"postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}"
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "your-secret-key")
+    app.config["JWT_SECRET_KEY"] = os.getenv("BACKEND_JWT_SECRET", "your-secret-key")
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=24)
     app.config["JWT_VERIFY_SUB"] = False
 
@@ -74,7 +68,7 @@ def create_app():
     session_manager.init_app(app)
 
     # Store Redis client in app extensions for email queue access
-    app.extensions['redis'] = audit_logger.redis_client
+    app.extensions["redis"] = audit_logger.redis_client
 
     CORS(app)
 

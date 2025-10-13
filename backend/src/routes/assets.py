@@ -32,8 +32,8 @@ def user_has_access_to_department(user, department_id):
 @asset_bp.route("", methods=["GET"])
 @jwt_required()
 def get_assets():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Regular users (non-managers, non-admins) should use /api/my-assets endpoint
     if current_profile.role == ProfileRole.USER:
@@ -181,8 +181,8 @@ def get_assets():
 @asset_bp.route("", methods=["POST"])
 @jwt_required()
 def create_asset():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Regular users (non-managers) cannot create assets
     if current_profile.role == ProfileRole.USER:
@@ -299,7 +299,7 @@ def create_asset():
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="create_asset",
         entity_type="asset",
@@ -312,7 +312,7 @@ def create_asset():
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="create",
         entity_type="asset",
@@ -328,8 +328,8 @@ def create_asset():
 @asset_bp.route("/<int:id>", methods=["PUT"])
 @jwt_required()
 def update_asset(id):
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Only admins can edit assets
     if current_profile.role != ProfileRole.ADMIN:
@@ -391,18 +391,27 @@ def update_asset(id):
     old_assigned_to = asset.assigned_to_user
 
     # Update new fields - support both old and new parameter names
-    if ("assigned_to_id" in data or "assigned_to_user" in data) and ("assigned_to_department_id" in data or "assigned_to_department" in data):
-        new_assigned_to_profile = data.get("assigned_to_id") or data.get("assigned_to_user")
-        new_assigned_to_department = data.get("assigned_to_department_id") or data.get("assigned_to_department")
+    if ("assigned_to_id" in data or "assigned_to_user" in data) and (
+        "assigned_to_department_id" in data or "assigned_to_department" in data
+    ):
+        new_assigned_to_profile = data.get("assigned_to_id") or data.get(
+            "assigned_to_user"
+        )
+        new_assigned_to_department = data.get("assigned_to_department_id") or data.get(
+            "assigned_to_department"
+        )
 
         # Validate that assigned user belongs to the asset's department
-        if new_assigned_to_profile is not None and new_assigned_to_department is not None:
+        if (
+            new_assigned_to_profile is not None
+            and new_assigned_to_department is not None
+        ):
             assigned_user = Profile.query.get(new_assigned_to_profile)
             if not assigned_user:
                 return jsonify({"message": "Assigned user not found"}), 400
 
             profile_dept_ids = [dept.id for dept in assigned_user.departments]
-            if new_assigned_to_department  not in profile_dept_ids:
+            if new_assigned_to_department not in profile_dept_ids:
                 current_app.logger.error(
                     "Cannot assign asset to user - user does not belong to the asset's department"
                 )
@@ -431,7 +440,10 @@ def update_asset(id):
     #             asset.assigned_to_user = None
 
     # Create transfer record if assignment changed
-    if new_assigned_to_profile != old_assigned_to and new_assigned_to_profile is not None:
+    if (
+        new_assigned_to_profile != old_assigned_to
+        and new_assigned_to_profile is not None
+    ):
         transfer = AssetTransfer(
             asset_id=asset.id,
             to_department_id=asset.assigned_to_department,
@@ -449,7 +461,7 @@ def update_asset(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="update_asset",
         entity_type="asset",
@@ -462,7 +474,7 @@ def update_asset(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="update",
         entity_type="asset",
@@ -479,8 +491,8 @@ def update_asset(id):
 @asset_bp.route("/<int:id>/transfer", methods=["POST"])
 @jwt_required()
 def transfer_asset(id):
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Regular users (non-managers) cannot transfer assets
     if current_profile.role == ProfileRole.USER:
@@ -578,7 +590,7 @@ def transfer_asset(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="transfer_asset",
         entity_type="asset",
@@ -591,7 +603,7 @@ def transfer_asset(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="transfer",
         entity_type="asset",
@@ -611,8 +623,8 @@ def transfer_asset(id):
 @asset_bp.route("/<int:id>", methods=["GET"])
 @jwt_required()
 def get_asset(id):
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     asset = Asset.query.get_or_404(id)
     asset_dict = asset.to_dict()
@@ -631,8 +643,8 @@ def get_asset(id):
 @asset_bp.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
 def delete_asset(id):
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Only admins can delete assets
     if current_profile.role != ProfileRole.ADMIN:
@@ -655,7 +667,7 @@ def delete_asset(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="delete_asset",
         entity_type="asset",
@@ -668,7 +680,7 @@ def delete_asset(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="delete",
         entity_type="asset",
@@ -693,8 +705,8 @@ def get_asset_history(id):
 @asset_bp.route("/sample-csv", methods=["GET"])
 @jwt_required()
 def download_sample_csv():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -764,8 +776,8 @@ def download_sample_csv():
 @asset_bp.route("/upload-csv", methods=["POST"])
 @jwt_required()
 def upload_assets_csv():
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized - admin only"}), 403
@@ -897,7 +909,7 @@ def upload_assets_csv():
 
                 # Log activity
                 activity = UserActivity(
-                    user_id=current_profile_id,
+                    user_id=current_profile.id,
                     username=current_profile.username,
                     action="create_asset_csv",
                     entity_type="asset",
@@ -941,8 +953,8 @@ def mark_asset_inactive(id):
     Mark asset as damaged or disposed and transfer to bad assets department.
     Only admins and managers can perform this action.
     """
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # Regular users (non-managers) cannot mark assets as inactive
     if current_profile.role == ProfileRole.USER:
@@ -1040,7 +1052,7 @@ def mark_asset_inactive(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action=f"mark_asset_{new_status}",
         entity_type="asset",
@@ -1054,7 +1066,7 @@ def mark_asset_inactive(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile_id,
+        user_id=current_profile.id,
         username=current_profile.username,
         action="update",
         entity_type="asset",
@@ -1088,8 +1100,8 @@ def mark_asset_inactive(id):
 @jwt_required()
 def propose_asset_for_liquidation(id):
     """Propose or unpropose an asset for liquidation (admin and department managers only)"""
-    current_profile_id = get_jwt_identity()
-    current_profile = Profile.query.get(current_profile_id)
+    current_profile_username = get_jwt_identity()
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     asset = Asset.query.get_or_404(id)
 
