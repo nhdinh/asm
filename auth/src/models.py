@@ -2,33 +2,38 @@ from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 from enum import Enum
 import bcrypt
-
-db = SQLAlchemy()
+from app import db
 
 
 class UserType(str, Enum):
     """User authentication type"""
-    LOCAL = "local"          # Local database authentication
+
+    LOCAL = "local"  # Local database authentication
     ACTIVE_DIRECTORY = "ad"  # Active Directory/LDAP authentication
-    SSO = "sso"             # Single Sign-On (future support)
+    SSO = "sso"  # Single Sign-On (future support)
 
 
 class User(db.Model):
     """User model - minimal subset for authentication"""
+
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=True)  # Nullable for AD/SSO users
+    password_hash = db.Column(
+        db.String(255), nullable=True
+    )  # Nullable for AD/SSO users
     email = db.Column(db.String(100), unique=True, nullable=False)
     fullname = db.Column(db.String(100))
     role = db.Column(db.String(20), nullable=False)
 
     # User type for authentication
     user_type = db.Column(
-        db.Enum(UserType, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        db.Enum(
+            UserType, native_enum=False, values_callable=lambda x: [e.value for e in x]
+        ),
         default=UserType.LOCAL,
-        nullable=False
+        nullable=False,
     )
 
     # Backward compatibility - deprecated, use user_type instead
@@ -39,8 +44,8 @@ class User(db.Model):
     def set_password(self, password):
         """Hash and set password"""
         self.password_hash = bcrypt.hashpw(
-            password.encode('utf-8'), bcrypt.gensalt()
-        ).decode('utf-8')
+            password.encode("utf-8"), bcrypt.gensalt()
+        ).decode("utf-8")
 
     def check_password(self, password):
         """Verify password - only for local users"""
@@ -49,7 +54,7 @@ class User(db.Model):
         if self.user_type != UserType.LOCAL:
             return False  # Non-local users should authenticate via their auth provider
         return bcrypt.checkpw(
-            password.encode('utf-8'), self.password_hash.encode('utf-8')
+            password.encode("utf-8"), self.password_hash.encode("utf-8")
         )
 
     @property
@@ -74,22 +79,27 @@ class User(db.Model):
     def to_dict(self):
         """Convert user to dictionary"""
         return {
-            'id': self.id,
-            'username': self.username,
-            'email': self.email,
-            'fullname': self.fullname,
-            'role': self.role,
-            'user_type': self.user_type.value if isinstance(self.user_type, UserType) else self.user_type,
-            'is_ad_user': self.is_ad_user,  # Backward compatibility
+            "id": self.id,
+            "username": self.username,
+            "email": self.email,
+            "fullname": self.fullname,
+            "role": self.role,
+            "user_type": (
+                self.user_type.value
+                if isinstance(self.user_type, UserType)
+                else self.user_type
+            ),
+            "is_ad_user": self.is_ad_user,  # Backward compatibility
         }
 
 
 class RefreshToken(db.Model):
     """Refresh token storage"""
+
     __tablename__ = "refresh_tokens"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     token_jti = db.Column(db.String(255), unique=True, nullable=False, index=True)
     access_token_jti = db.Column(db.String(255), nullable=False, index=True)
     ip_address = db.Column(db.String(45))
@@ -99,11 +109,12 @@ class RefreshToken(db.Model):
     is_revoked = db.Column(db.Boolean, default=False, nullable=False)
     revoked_at = db.Column(db.DateTime)
 
-    user = db.relationship('User', backref=db.backref('refresh_tokens', lazy='dynamic'))
+    user = db.relationship("User", backref=db.backref("refresh_tokens", lazy="dynamic"))
 
 
 class LoginAttempt(db.Model):
     """Track failed login attempts"""
+
     __tablename__ = "login_attempts"
 
     id = db.Column(db.Integer, primary_key=True)

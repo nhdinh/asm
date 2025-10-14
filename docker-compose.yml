@@ -30,7 +30,7 @@ services:
     environment:
       FLASK_ENV: production
       AUTH_APP_SECRET: ${AUTH_APP_SECRET}
-      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       AUTH_DB: ${AUTH_DB}
       POSTGRES_HOST: postgres
       POSTGRES_USER_FILE: /run/secrets/postgres_user
@@ -38,8 +38,13 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD_FILE: /run/secrets/redis_password
-      JWT_ACCESS_TOKEN_HOURS: 1
-      JWT_REFRESH_TOKEN_DAYS: 30
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      JWT_ACCESS_TOKEN_MINS: ${JWT_ACCESS_TOKEN_MINS}
+      JWT_REFRESH_TOKEN_DAYS: ${JWT_REFRESH_TOKEN_DAYS}
       AD_ENABLED: ${AD_ENABLED:-false}
       AD_SERVER: ${AD_SERVER:-}
       AD_PORT: ${AD_PORT:-389}
@@ -61,6 +66,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - rabbitmq
     networks:
       - asset-network
 
@@ -83,13 +89,20 @@ services:
       - ./backend/.env:/app/.env
     environment:
       FLASK_ENV: production
-      BACKEND_JWT_SECRET: ${AUTH_JWT_SECRET}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ACCESS_TOKEN_MINS: ${JWT_ACCESS_TOKEN_MINS}
+      JWT_VERIFY_SUB: false
       BACKEND_DB: ${BACKEND_DB}
       POSTGRES_USER_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
       USE_AUTH_SERVICE: "true"
       AUTH_SERVICE_URL: "http://auth:5001/api/auth"
     restart: unless-stopped
@@ -103,6 +116,7 @@ services:
       - auth
       - postgres
       - redis
+      - rabbitmq
     networks:
       - asset-network
 
@@ -189,6 +203,30 @@ services:
     networks:
       - asset-network
 
+  # RabbitMQ Message Broker - for event-driven sync between services
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: ams-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin123}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - rabbitmq_log:/var/log/rabbitmq
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - asset-network
+
   # Email Worker - Background service for sending emails
   email_worker:
     build:
@@ -205,7 +243,7 @@ services:
       - ./backend/.env:/app/.env
     environment:
       FLASK_ENV: production
-      BACKEND_JWT_SECRET: ${BACKEND_JWT_SECRET}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       BACKEND_DB: ${BACKEND_DB}
       POSTGRES_USER_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
@@ -285,6 +323,10 @@ networks:
 
 volumes:
   redis_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  rabbitmq_log:
     driver: local
   samba_data:
     driver: local

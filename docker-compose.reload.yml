@@ -6,7 +6,7 @@ services:
       - "sh"
       - "-c"
       - |
-        python -m gunicorn --bind=0.0.0.0:5001 --workers=2 --reload src.auth_service:app
+        python src/auth.py
 
   backend:
     ports:

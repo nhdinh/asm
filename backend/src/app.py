@@ -6,7 +6,7 @@ from flask_cors import CORS
 from flask_migrate import Migrate
 from datetime import timedelta
 import os
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 import logging
 
 ENV_PATH = "./.env"
@@ -49,9 +49,11 @@ def create_app():
         f"postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}"
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["JWT_SECRET_KEY"] = os.getenv("BACKEND_JWT_SECRET", "your-secret-key")
-    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=24)
-    app.config["JWT_VERIFY_SUB"] = False
+    app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "your-secret-key")
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(
+        minutes=(int(os.getenv("JWT_ACCESS_TOKEN_MINS", "1440")))
+    )
+    app.config["JWT_VERIFY_SUB"] = os.getenv("JWT_VERIFY_SUB", False)
 
     # JWT token location and header settings (for compatibility with auth service)
     app.config["JWT_TOKEN_LOCATION"] = ["headers"]

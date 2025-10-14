@@ -30,7 +30,9 @@
       "Bash({ read TOKEN)",
       "Bash(})",
       "Bash(find:*)",
-      "Bash(timeout 10 docker-compose -f docker-compose.yml -f docker-compose.reload.yml logs -f frontend)"
+      "Bash(timeout 10 docker-compose -f docker-compose.yml -f docker-compose.reload.yml logs -f frontend)",
+      "Bash(REFRESH_TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MDQyOTQzMCwianRpIjoiNmE1N2Y2YTMtNTY3Yy00ZDYwLThkYzAtY2ZlNmNjZTM2MjA0IiwidHlwZSI6InJlZnJlc2giLCJzdWIiOiJhZG1pbiIsIm5iZiI6MTc2MDQyOTQzMCwiY3NyZiI6IjM5OWJkOWZhLTc3ZjgtNGZmMC05MGQxLTczZjM4NjhmYWNhZSIsImV4cCI6MTc2MzAyMTQzMCwidXNlcm5hbWUiOiJhZG1pbiIsInJvbGUiOiJBRE1JTiIsImFjY2Vzc19qdGkiOiI4YTMxNWNiMC1lYTBhLTQzZjAtODg5NS04OTExNzFhMzNlM2QifQ.1B0lr9b2FsKzhCArtU982SjDjFJhjRF6JNwQA_ggBfA\")",
+      "Bash(source:*)"
     ],
     "deny": [],
     "ask": []

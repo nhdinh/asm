@@ -149,6 +149,7 @@ pytest -v tests/
 **Root Environment File** (.env in project root):
 
 Core application secrets and database configuration:
+
 - `AUTH_DB`: Database name for Auth service (default: auth_db)
 - `AUTH_JWT_SECRET`: JWT secret key for authentication service
 - `AUTH_APP_SECRET`: Flask secret key for authentication service
@@ -159,6 +160,7 @@ Core application secrets and database configuration:
 - `DB_LOCATION`: Host path for PostgreSQL database volume (default: ../asset_db/)
 
 Active Directory configuration (optional):
+
 - `AD_DOMAIN`: Active Directory domain name (default: ASSETMAN)
 - `AD_REALM`: Active Directory realm (default: ASSETMAN.LOCAL)
 - `AD_ADMIN_PASSWORD`: AD administrator password (default: Admin@123456)
@@ -187,7 +189,7 @@ Active Directory configuration (optional):
 - `REDIS_HOST`: Redis server host (default: redis)
 - `REDIS_PORT`: Redis server port (default: 6379)
 - `REDIS_PASSWORD_FILE`: Docker secret file path (default: /run/secrets/redis_password)
-- `JWT_ACCESS_TOKEN_HOURS`: Access token expiration in hours (default: 1)
+- `JWT_ACCESS_TOKEN_MINS`: Access token expiration in minutes (default: 1440)
 - `JWT_REFRESH_TOKEN_DAYS`: Refresh token expiration in days (default: 30)
 - `AD_ENABLED`: Enable Active Directory authentication (default: false)
 - `AD_SERVER`: Active Directory server hostname
@@ -201,7 +203,7 @@ Active Directory configuration (optional):
 - `AD_GROUP_SEARCH_FILTER`: LDAP filter for group search (default: (member={user_dn}))
 - `MAX_FAILED_LOGIN_ATTEMPTS`: Max failed login attempts (default: 5)
 - `ACCOUNT_LOCKOUT_MINUTES`: Account lockout duration in minutes (default: 15)
-- `CORS_ORIGINS`: Allowed CORS origins, comma-separated (default: *)
+- `CORS_ORIGINS`: Allowed CORS origins, comma-separated (default: \*)
 
 **Backend Service** (environment configured in docker-compose.yml):
 

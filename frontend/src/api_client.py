@@ -17,7 +17,6 @@ class ApiClient:
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "AssetTracker-Frontend/1.0"})
 
-
         self.app.logger.info(
             f"ApiClient initialized with " + app.config["API_BASE_URL"]
         )
@@ -85,7 +84,7 @@ class ApiClient:
             self.app.logger.error(f"DELETE {path} error: {str(e)}")
             raise
 
-    def login(self, username, password, auth_type='local'):
+    def login(self, username, password, auth_type="local"):
         """
         Login user with specified authentication type
 
@@ -103,13 +102,36 @@ class ApiClient:
                 json={
                     "username": username,
                     "password": password,
-                    "auth_type": auth_type
+                    "auth_type": auth_type,
                 },
                 timeout=10,
             )
             return response
         except Exception as e:
             self.app.logger.exception(e)
+            return None
+
+    def refresh_access_token(self, refresh_token):
+        """
+        Refresh access token using refresh token
+
+        Args:
+            refresh_token (str): Refresh token from login
+
+        Returns:
+            Response object with new access_token or None on error
+        """
+        try:
+            # Send refresh token in Authorization header (required by @jwt_required(refresh=True))
+            response = self.session.post(
+                f"{self.base_url}/auth/refresh",
+                headers={"Authorization": f"Bearer {refresh_token}"},
+                timeout=10,
+            )
+
+            return response
+        except Exception as e:
+            self.app.logger.error(f"Token refresh error: {str(e)}")
             return None
 
     def get_assets(self, filters=None):
@@ -274,16 +296,18 @@ class ApiClient:
             self.app.logger.error(f"Get users error: {str(e)}")
             raise
 
-    def get_user(self, user_id):
+    def get_profile(self, profile_id):
         try:
-            response = self.session.get(f"{self.base_url}/users/{user_id}", timeout=10)
+            response = self.session.get(
+                f"{self.base_url}/users/{profile_id}", timeout=10
+            )
             response.raise_for_status()
             return response.json()
         except Exception as e:
             self.app.logger.error(f"Get user error: {str(e)}")
             raise
 
-    def create_user(self, user_data):
+    def create_user_and_profile(self, user_data):
         try:
             response = self.session.post(
                 f"{self.base_url}/auth/register", json=user_data, timeout=10
@@ -303,10 +327,10 @@ class ApiClient:
             self.app.logger.error(f"Create user error: {str(e)}")
             raise
 
-    def update_user(self, user_id, user_data):
+    def update_user_and_profile(self, profile_id, user_data):
         try:
             response = self.session.put(
-                f"{self.base_url}/users/{user_id}", json=user_data, timeout=10
+                f"{self.base_url}/users/{profile_id}", json=user_data, timeout=10
             )
             response.raise_for_status()
             return response.json()
@@ -314,10 +338,10 @@ class ApiClient:
             self.app.logger.error(f"Update user error: {str(e)}")
             raise
 
-    def delete_user(self, user_id):
+    def delete_user_and_profile(self, profile_id):
         try:
             response = self.session.delete(
-                f"{self.base_url}/users/{user_id}", timeout=10
+                f"{self.base_url}/users/{profile_id}", timeout=10
             )
             response.raise_for_status()
             return True

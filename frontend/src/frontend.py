@@ -1,6 +1,7 @@
 from enum import StrEnum
 from app import create_app
 from flask import (
+    current_app,
     render_template,
     request,
     redirect,
@@ -12,7 +13,7 @@ from flask import (
 )
 import os
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import io
 import csv
 import requests
@@ -31,8 +32,49 @@ API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:5000")
 def get_api_client():
     client = ApiClient(app)
 
-    if "access_token" in session:
+    token_expire = session.get(
+        "expired_at", datetime.now(timezone.utc) - timedelta(minutes=1)
+    )
+
+    if "access_token" in session and datetime.now(timezone.utc) < token_expire:
+        # Token is still valid, use it
         client.set_token(session["access_token"])
+    elif "refresh_token" in session:
+        # Access token expired but we have refresh token, try to refresh
+        app.logger.info("Access token expired, attempting to refresh...")
+
+        try:
+            refresh_response = client.refresh_access_token(session["refresh_token"])
+
+            if refresh_response and refresh_response.status_code == 200:
+                result = refresh_response.json()
+
+                # Update session with new tokens
+                session["access_token"] = result["access_token"]
+                session["expired_at"] = datetime.now(timezone.utc) + timedelta(
+                    seconds=int(result.get("expires_in", 3600))
+                )
+
+                # Update refresh token if provided (some implementations rotate refresh tokens)
+                if "refresh_token" in result:
+                    session["refresh_token"] = result["refresh_token"]
+
+                # Set the new token in client
+                client.set_token(session["access_token"])
+                app.logger.info("Token refreshed successfully")
+            else:
+                # Refresh failed, clear session and force re-login
+                app.logger.warning("Token refresh failed, session cleared")
+                session.clear()
+                flash("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.", "warning")
+        except Exception as e:
+            app.logger.error(f"Error refreshing token: {str(e)}")
+            session.clear()
+            flash("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.", "warning")
+    else:
+        # No access token and no refresh token, user needs to login
+        app.logger.warning("No valid tokens in session")
+
     return client
 
 
@@ -46,7 +88,7 @@ def extract_items(response):
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if "access_token" not in session:
+        if "access_token" not in session or "refresh_token" not in session:
             flash("Vui lòng đăng nhập để tiếp tục.", "warning")
             return redirect(url_for("login"))
 
@@ -150,6 +192,9 @@ def login():
             if response and response.status_code == 200:
                 result = response.json()
                 session["access_token"] = result["access_token"]
+                session["expired_at"] = datetime.now(timezone.utc) + timedelta(
+                    seconds=int(result["expires_in"])
+                )
                 session["user"] = result["user"]
 
                 # Store refresh token if available (from auth service)
@@ -415,9 +460,6 @@ def assets():
         pagination = None
         flash("Không thể tải danh sách tài sản", "warning")
 
-    asset_dict = assets[0]
-    app.logger.info(f"Asset 0 = {asset_dict}")
-
     return render_template(
         "assets/list.html",
         assets=assets,
@@ -539,11 +581,11 @@ def users():
 
         # Extract items and pagination from response
         if isinstance(response, dict) and "items" in response:
-            users_list = response["items"]
+            profiles_list = response["items"]
             pagination = response.get("pagination", {})
         else:
             # Fallback for non-paginated response
-            users_list = response
+            profiles_list = response
             pagination = None
 
         departments = extract_items(client.get_departments())
@@ -559,7 +601,7 @@ def users():
 
     except Exception as e:
         app.logger.exception(e)
-        users_list = []
+        profiles_list = []
         departments = []
         pagination = None
         filters = {}
@@ -567,7 +609,7 @@ def users():
 
     return render_template(
         "users/list.html",
-        users=users_list,
+        profiles=profiles_list,
         departments=departments,
         pagination=pagination,
         filters=filters,
@@ -599,7 +641,7 @@ def create_user():
                 "manager_department_ids": [int(d) for d in manager_department_ids if d],
             }
 
-            client.create_user(user_data)
+            client.create_user_and_profile(user_data)
             flash("Tạo người dùng thành công", "success")
             return redirect(url_for("users"))
         except Exception as e:
@@ -616,28 +658,30 @@ def create_user():
     return render_template("users/create.html", departments=departments)
 
 
-@app.route("/users/<int:id>")
+@app.route("/users/<int:profile_id>")
 @login_required
-def user_detail(id):
+def user_detail(profile_id):
     """View user details and their assigned assets"""
     try:
         client = get_api_client()
-        user = client.get_user(id)
+        profile = client.get_profile(profile_id)
 
         # Get assets assigned to this user
-        assets = extract_items(client.get_assets(filters={"assigned_to_id": id}))
+        assets = extract_items(
+            client.get_assets(filters={"assigned_to_id": profile_id})
+        )
     except Exception as e:
         app.logger.exception(e)
         flash("Không thể tải thông tin người dùng", "danger")
         return redirect(url_for("users"))
 
-    return render_template("users/detail.html", user=user, assets=assets)
+    return render_template("users/detail.html", profile=profile, assets=assets)
 
 
-@app.route("/users/<int:id>/edit", methods=["GET", "POST"])
+@app.route("/users/<int:profile_id>/edit", methods=["GET", "POST"])
 @login_required
 @admin_required
-def edit_user(id):
+def edit_user(profile_id: int):
     if request.method == "POST":
         try:
             client = get_api_client()
@@ -655,29 +699,29 @@ def edit_user(id):
                 "manager_department_ids": [int(d) for d in manager_department_ids if d],
             }
 
-            client.update_user(id, user_data)
+            client.update_user_and_profile(profile_id, user_data)
             flash("Cập nhật người dùng thành công", "success")
-            return redirect(url_for("user_detail", id=id))
+            return redirect(url_for("user_detail", profile_id=profile_id))
         except Exception as e:
             app.logger.exception(e)
             flash(f"Không thể cập nhật người dùng: {str(e)}", "danger")
 
     try:
         client = get_api_client()
-        user = client.get_user(id)
+        profile = client.get_profile(profile_id)
         departments = extract_items(client.get_departments())
     except Exception as e:
         app.logger.exception(e)
         flash("Không thể tải thông tin người dùng", "danger")
         return redirect(url_for("users"))
 
-    return render_template("users/edit.html", user=user, departments=departments)
+    return render_template("users/edit.html", user=profile, departments=departments)
 
 
-@app.route("/users/<int:id>/reset-password", methods=["POST"])
+@app.route("/users/<int:profile_id>/reset-password", methods=["POST"])
 @login_required
 @admin_required
-def reset_user_password(id):
+def reset_user_password(profile_id):
     try:
         data = request.get_json()
         # Accept both 'password' and 'new_password' for compatibility
@@ -685,12 +729,12 @@ def reset_user_password(id):
         if not data or not password:
             return jsonify({"message": "Password is required"}), 400
 
-        app.logger.info(f"Resetting password for user {id}")
+        app.logger.info(f"Resetting password for user {profile_id}")
         app.logger.info(f"Session has access_token: {'access_token' in session}")
 
         client = get_api_client()
         result = client.reset_user_password(
-            id,
+            profile_id,
             {
                 "password": password,
                 "must_change_password": data.get("must_change_password", False),
@@ -712,7 +756,7 @@ def delete_user(id):
             return jsonify({"message": "Không thể xóa chính mình"}), 400
 
         client = get_api_client()
-        client.delete_user(id)
+        client.delete_user_and_profile(id)
         return jsonify({"message": "Đã xóa người dùng thành công"}), 200
     except Exception as e:
         app.logger.exception(e)

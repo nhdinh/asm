@@ -3,6 +3,7 @@ from flask_jwt_extended import get_current_user, jwt_required, get_jwt_identity
 from models import Profile, db, ProfileRole, UserActivity, Department, ActivityStatus
 from audit_logger import audit_logger
 from pagination import paginate_query, get_sort_params
+from message_broker import message_broker
 import csv
 import io
 
@@ -270,7 +271,7 @@ def get_user(id):
     current_profile_username = get_jwt_identity()
     current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
-    if current_profile.role != ProfileRole.ADMIN and current_profile_id != id:
+    if current_profile.role != ProfileRole.ADMIN and current_profile.id != id:
         return jsonify({"message": "Unauthorized"}), 403
 
     user = Profile.query.get_or_404(id)
@@ -279,7 +280,11 @@ def get_user(id):
 
 @users_bp.route("/<int:id>", methods=["PUT"])
 @jwt_required()
-def update_user(id):
+def update_user(id: int):
+    """Update user information - syncs with auth service"""
+    from flask import current_app
+    from auth_client import auth_client
+
     try:
         current_profile_username = get_jwt_identity()
         current_profile = Profile.query.filter_by(
@@ -295,16 +300,63 @@ def update_user(id):
         # Capture old values for audit
         old_values = profile.to_dict()
 
-        # Only admin can change username
+        # Get access token for auth service
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return jsonify({"message": "Authorization token required"}), 401
+
+        access_token = auth_header.split(" ")[1]
+
+        # Prepare data for auth service update
+        auth_update_data = {}
+
+        # Fields to sync with auth service
         if "username" in data and data.get("username") != profile.username:
+            auth_update_data["username"] = data["username"]
             profile.username = data["username"]
 
-        profile.fullname = data.get("fullname", profile.fullname)
-        profile.email = data.get("email", profile.email)
-        if data.get("role"):
-            profile.role = ProfileRole[data["role"].upper()]
+        if "fullname" in data:
+            auth_update_data["fullname"] = data["fullname"]
+            profile.fullname = data["fullname"]
 
-        # Update departments (many-to-many relationship)
+        if "email" in data:
+            auth_update_data["email"] = data["email"]
+            profile.email = data["email"]
+
+        if "role" in data:
+            role = ProfileRole[data["role"].upper()]
+            auth_update_data["role"] = role.value
+            profile.role = role
+
+        # Step 1: Update user in auth service if there are changes
+        # IMPORTANT: Use username as the key, not ID, because backend Profile.id != auth User.id
+        if auth_update_data:
+            # Get the original username before update (in case username is being changed)
+            original_username = profile.username if "username" not in data else Profile.query.get(id).username
+
+            success, _, error_msg = auth_client.update_user_by_username(
+                access_token, original_username, auth_update_data
+            )
+
+            if not success:
+                current_app.logger.error(
+                    f"Failed to update user in auth service: {error_msg}"
+                )
+                return (
+                    jsonify(
+                        {
+                            "message": f"Failed to sync user credentials: {error_msg}",
+                            "note": "User profile not updated in backend to maintain consistency",
+                        }
+                    ),
+                    400,
+                )
+
+            current_app.logger.info(
+                f"User {original_username} updated successfully in auth service"
+            )
+
+        # Step 2: Update departments (many-to-many relationship) in backend only
         if "department_ids" in data:
             # Validate non-admins must belong to at least one department
             if profile.role != ProfileRole.ADMIN and (
@@ -324,7 +376,7 @@ def update_user(id):
 
             ProfileDepartment.query.filter_by(profile_id=profile.id).delete()
 
-            # Get manager department IDs from request (format: {"dept_id": is_manager})
+            # Get manager department IDs from request
             manager_dept_ids = data.get("manager_department_ids", [])
 
             # Add new department associations with is_manager flag
@@ -361,16 +413,21 @@ def update_user(id):
             entity_id=profile.id,
             old_values=old_values,
             new_values=profile.to_dict(),
-            details=f"Updated user {profile.username}",
+            details=f"Updated user {profile.username} (synced with auth service)",
             ip_address=request.remote_addr,
         )
 
+        current_app.logger.info(
+            f"User {profile.username} updated successfully in both auth and backend databases"
+        )
         return jsonify(profile.to_dict())
+
     except Exception as e:
         db.session.rollback()
         import traceback
 
         traceback.print_exc()
+        current_app.logger.error(f"Error updating user: {str(e)}")
         return jsonify({"message": f"Error updating user: {str(e)}"}), 500
 
 
@@ -383,17 +440,17 @@ def delete_user(id):
     if current_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
-    if current_profile_id == id:
+    if current_profile.id == id:
         return jsonify({"message": "Cannot delete yourself"}), 400
 
-    user = Profile.query.get_or_404(id)
-    username = user.username
-    old_values = user.to_dict()
+    profile = Profile.query.get_or_404(id)
+    username = profile.username
+    old_values = profile.to_dict()
 
     # Soft delete - set deleted_at timestamp
     from datetime import datetime
 
-    user.deleted_at = datetime.utcnow()
+    profile.deleted_at = datetime.utcnow()
 
     # Log activity
     activity = UserActivity(
@@ -416,7 +473,7 @@ def delete_user(id):
         entity_type="user",
         entity_id=id,
         old_values=old_values,
-        new_values={"deleted_at": user.deleted_at.isoformat()},
+        new_values={"deleted_at": profile.deleted_at.isoformat()},
         details=f"Deleted user {username} (soft delete)",
         ip_address=request.remote_addr,
     )

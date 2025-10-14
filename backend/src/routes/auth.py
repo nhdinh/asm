@@ -94,11 +94,13 @@ def login():
 @auth_bp.route("/register", methods=["POST"])
 @jwt_required()
 def register():
-    curr_user_id = get_jwt_identity()
-    curr_user = User.query.get(curr_user_id)
+    sess_profile_id = get_jwt_identity()
+    sess_profile = Profile.query.get(sess_profile_id)
 
-    if curr_user.role != ProfileRole.ADMIN:
-        details = f"User {curr_user.username} try adding new user without admin role."
+    if sess_profile.role != ProfileRole.ADMIN:
+        details = (
+            f"User {sess_profile.username} try adding new user without admin role."
+        )
         log_auth_activity(action="create_user", details=details, commit=True)
 
         return jsonify({"message": "Unauthorized"}), 403
@@ -134,6 +136,12 @@ def register():
                 ),
                 400,
             )
+
+    # check for user exists in auth service
+    success, existing_user = auth_client.get_user_by_username(username=data["username"])
+    if success:
+        details = f"Create user {data['username']} failed. Username already exists."
+        log_auth_activity(action="create_user", details=details, commit=True)
 
     # Check if user exists
     if User.query.filter_by(username=data["username"]).first():
@@ -202,8 +210,8 @@ def register():
 
             # Audit log
             audit_logger.log(
-                user_id=curr_user_id,
-                username=curr_user.username,
+                user_id=sess_profile_id,
+                username=sess_profile.username,
                 action="create",
                 entity_type="user",
                 entity_id=user.id,
@@ -460,17 +468,18 @@ def logout():
         if auth_header.startswith("Bearer "):
             access_token = auth_header[7:]
 
+            current_profile_username = get_jwt_identity()
+            current_profile = Profile.query.filter_by(
+                username=current_profile_username
+            ).first()
+
             data = request.get_json() or {}
             revoke_all = data.get("revoke_all", False)
 
             success = auth_client.logout(access_token, revoke_all)
+            current_app.logger.error(f"success = {success}")
 
             if success:
-                current_profile_username = get_jwt_identity()
-                current_profile = Profile.query.filter_by(
-                    username=current_profile_username
-                )
-
                 audit_logger.log(
                     user_id=current_profile.id,
                     username=current_profile.username if current_profile else "unknown",
@@ -555,7 +564,7 @@ def log_auth_activity(
     commit: bool = False,
 ):
     current_profile_username = get_jwt_identity()
-    current_profile = User.query.get(current_profile_id)
+    current_profile = Profile.query.filter_by(username=current_profile_username).first()
 
     # create activity
     activity = UserActivity(
@@ -563,7 +572,7 @@ def log_auth_activity(
         username=current_profile.username,
         action=action,
         entity_type="user",
-        entity_id=current_profile_id,
+        entity_id=current_profile.id,
         details=details,
         status=status,
     )

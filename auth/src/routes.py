@@ -1,22 +1,22 @@
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
-from .models import db, User, RefreshToken, LoginAttempt, UserType
+from models import db, User, RefreshToken, LoginAttempt, UserType
 from werkzeug.exceptions import BadRequest
 import logging
 
 logger = logging.getLogger(__name__)
 
-auth_routes = Blueprint("auth", __name__)
+auth_bp = Blueprint("auth", __name__)
 
 
-@auth_routes.route("/health", methods=["GET"])
+@auth_bp.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy", "service": "authentication"}), 200
 
 
-@auth_routes.route("/login", methods=["POST"])
+@auth_bp.route("/login", methods=["POST"])
 def login():
     """
     Authenticate user and issue tokens
@@ -165,7 +165,7 @@ def login():
         return jsonify({"message": "Internal server error"}), 500
 
 
-@auth_routes.route("/refresh", methods=["POST"])
+@auth_bp.route("/refresh", methods=["POST"])
 @jwt_required(refresh=True)
 def refresh():
     """
@@ -228,7 +228,7 @@ def refresh():
         return jsonify({"message": "Internal server error"}), 500
 
 
-@auth_routes.route("/logout", methods=["POST"])
+@auth_bp.route("/logout", methods=["POST"])
 @jwt_required()
 def logout():
     """
@@ -285,7 +285,7 @@ def logout():
         return jsonify({"message": "Internal server error"}), 500
 
 
-@auth_routes.route("/verify", methods=["POST"])
+@auth_bp.route("/verify", methods=["POST"])
 @jwt_required()
 def verify():
     """
@@ -332,15 +332,18 @@ def verify():
         return jsonify({"valid": False, "message": "Invalid token"}), 401
 
 
-@auth_routes.route("/sessions", methods=["GET"])
+@auth_bp.route("/sessions", methods=["GET"])
 @jwt_required()
 def get_sessions():
     """Get all active sessions for current user"""
     try:
-        current_profile_username = get_jwt_identity()
+        sess_profile_username = get_jwt_identity()
+        sess_user = User.query.filter_by(
+            username=sess_profile_username, delete_at=None
+        ).first()
 
         token_manager = current_app.token_manager
-        sessions = token_manager.get_user_active_sessions(current_profile_id)
+        sessions = token_manager.get_user_active_sessions(sess_user.id)
 
         return jsonify({"sessions": sessions}), 200
 
@@ -349,7 +352,40 @@ def get_sessions():
         return jsonify({"message": "Internal server error"}), 500
 
 
-@auth_routes.route("/users/<username>", methods=["GET"])
+@auth_bp.route("/users/<str:username>/<str:email>", methods=["GET"])
+@jwt_required
+def get_user_by_username_or_email(username, email):
+    """
+    Get user information by username
+
+    Response:
+    {
+        "user": {
+            "id": int,
+            "username": "string",
+            "email": "string",
+            "fullname": "string",
+            "role": "string",
+            "user_type": "string",
+            "is_ad_user": bool
+        }
+    }
+    """
+    try:
+        # Get current user from JWT
+        sess_profile_username = get_jwt_identity()
+        sess_user = User.query.filter_by(
+            username=sess_profile_username, delete_at=None
+        ).first()
+
+        if not sess_user:
+            return jsonify({"message": "Current user not found"}), 401
+    except Exception as e:
+        logger.error(f"Get user by username error: {str(e)}", exc_info=True)
+        return jsonify({"message": "Internal server error"}), 500
+
+
+@auth_bp.route("/users/<str:username>", methods=["GET"])
 @jwt_required()
 def get_user_by_username(username):
     """
@@ -369,12 +405,7 @@ def get_user_by_username(username):
     }
     """
     try:
-        # Get current user from JWT
-        current_profile_username = get_jwt_identity()
-        current_profile = User.query.get(current_profile_id)
-
-        if not current_profile:
-            return jsonify({"message": "Current user not found"}), 401
+        sess_user = _check_jwt_user()
 
         # Find user by username (excluding deleted users)
         user = User.query.filter_by(username=username, deleted_at=None).first()
@@ -409,7 +440,7 @@ def get_user_by_username(username):
         return jsonify({"message": "Internal server error"}), 500
 
 
-@auth_routes.route("/users/id/<int:user_id>", methods=["GET"])
+@auth_bp.route("/users/<int:user_id>", methods=["GET"])
 @jwt_required()
 def get_user_by_id(user_id):
     """
@@ -469,7 +500,7 @@ def get_user_by_id(user_id):
         return jsonify({"message": "Internal server error"}), 500
 
 
-@auth_routes.route("/users", methods=["GET"])
+@auth_bp.route("/users", methods=["GET"])
 @jwt_required()
 def list_users():
     """
@@ -561,7 +592,7 @@ def list_users():
         return jsonify({"message": "Internal server error"}), 500
 
 
-@auth_routes.route("/users", methods=["POST"])
+@auth_bp.route("/users", methods=["POST"])
 @jwt_required()
 def create_user():
     """
@@ -717,7 +748,260 @@ def create_user():
         return jsonify({"message": "Internal server error"}), 500
 
 
+@auth_bp.route("/users/<int:user_id>", methods=["PUT"])
+@jwt_required()
+def update_user(user_id):
+    """
+    Update user information (admin only)
+
+    Request body:
+    {
+        "username": "string" (optional),
+        "email": "string" (optional),
+        "fullname": "string" (optional),
+        "role": "ADMIN|USER" (optional)
+    }
+
+    Response:
+    {
+        "message": "User updated successfully",
+        "user": {
+            "id": int,
+            "username": "string",
+            "email": "string",
+            "fullname": "string",
+            "role": "string",
+            "user_type": "string",
+            "is_ad_user": bool
+        }
+    }
+    """
+    try:
+        # Get current user from JWT
+        current_profile_username = get_jwt_identity()
+        current_user = User.query.filter_by(
+            username=current_profile_username, deleted_at=None
+        ).first()
+
+        if not current_user:
+            return jsonify({"message": "Current user not found"}), 401
+
+        # Only admins can update users
+        if current_user.role != "ADMIN":
+            return jsonify({"message": "Unauthorized - admin only"}), 403
+
+        # Find user to update
+        user = User.query.filter_by(id=user_id, deleted_at=None).first()
+        if not user:
+            return jsonify({"message": "User not found"}), 404
+
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({"message": "Request body is required"}), 400
+
+        # Update username if provided
+        if "username" in data:
+            new_username = data["username"].strip()
+            if new_username != user.username:
+                # Check if new username already exists
+                existing_user = User.query.filter_by(username=new_username).first()
+                if existing_user:
+                    return jsonify({"message": "Username already exists"}), 400
+                user.username = new_username
+
+        # Update email if provided
+        if "email" in data:
+            new_email = data["email"].strip()
+            if new_email != user.email:
+                # Check if new email already exists
+                existing_email = User.query.filter_by(email=new_email).first()
+                if existing_email:
+                    return jsonify({"message": "Email already exists"}), 400
+                user.email = new_email
+
+        # Update fullname if provided
+        if "fullname" in data:
+            user.fullname = data["fullname"].strip() or None
+
+        # Update role if provided
+        if "role" in data:
+            new_role = data["role"].upper()
+            if new_role not in ["ADMIN", "USER"]:
+                return jsonify({"message": "Invalid role. Must be ADMIN or USER"}), 400
+            user.role = new_role
+
+        # Save changes
+        db.session.commit()
+
+        logger.info(
+            f"User {user.username} (ID: {user_id}) updated by admin {current_user.username}"
+        )
+
+        # Return updated user
+        return (
+            jsonify(
+                {
+                    "message": "User updated successfully",
+                    "user": {
+                        "id": user.id,
+                        "username": user.username,
+                        "email": user.email,
+                        "fullname": user.fullname,
+                        "role": user.role,
+                        "user_type": (
+                            user.user_type.value
+                            if isinstance(user.user_type, UserType)
+                            else user.user_type
+                        ),
+                        "is_ad_user": user.is_ad_user,
+                    },
+                }
+            ),
+            200,
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Update user error: {str(e)}", exc_info=True)
+        return jsonify({"message": "Internal server error"}), 500
+
+
+@auth_bp.route("/users/username/<string:username>", methods=["PUT"])
+@jwt_required()
+def update_user_by_username(username):
+    """
+    Update user information by username (admin only)
+
+    IMPORTANT: Use this endpoint instead of PUT /users/<int:user_id>
+    because backend Profile.id != auth User.id. Username is the common key.
+
+    Request body:
+    {
+        "username": "string" (optional) - new username,
+        "email": "string" (optional),
+        "fullname": "string" (optional),
+        "role": "ADMIN|USER" (optional)
+    }
+
+    Response:
+    {
+        "message": "User updated successfully",
+        "user": {
+            "id": int,
+            "username": "string",
+            "email": "string",
+            "fullname": "string",
+            "role": "string",
+            "user_type": "string",
+            "is_ad_user": bool
+        }
+    }
+    """
+    try:
+        # Get current user from JWT
+        current_profile_username = get_jwt_identity()
+        current_user = User.query.filter_by(
+            username=current_profile_username, deleted_at=None
+        ).first()
+
+        if not current_user:
+            return jsonify({"message": "Current user not found"}), 401
+
+        # Only admins can update users
+        if current_user.role != "ADMIN":
+            return jsonify({"message": "Unauthorized - admin only"}), 403
+
+        # Find user to update by username
+        user = User.query.filter_by(username=username, deleted_at=None).first()
+        if not user:
+            return jsonify({"message": f"User '{username}' not found"}), 404
+
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({"message": "Request body is required"}), 400
+
+        # Update username if provided
+        if "username" in data:
+            new_username = data["username"].strip()
+            if new_username != user.username:
+                # Check if new username already exists
+                existing_user = User.query.filter_by(username=new_username).first()
+                if existing_user:
+                    return jsonify({"message": "Username already exists"}), 400
+                user.username = new_username
+
+        # Update email if provided
+        if "email" in data:
+            new_email = data["email"].strip()
+            if new_email != user.email:
+                # Check if new email already exists
+                existing_email = User.query.filter_by(email=new_email).first()
+                if existing_email:
+                    return jsonify({"message": "Email already exists"}), 400
+                user.email = new_email
+
+        # Update fullname if provided
+        if "fullname" in data:
+            user.fullname = data["fullname"].strip() or None
+
+        # Update role if provided
+        if "role" in data:
+            new_role = data["role"].upper()
+            if new_role not in ["ADMIN", "USER"]:
+                return jsonify({"message": "Invalid role. Must be ADMIN or USER"}), 400
+            user.role = new_role
+
+        # Save changes
+        db.session.commit()
+
+        logger.info(f"User '{username}' updated by admin {current_user.username}")
+
+        # Return updated user
+        return (
+            jsonify(
+                {
+                    "message": "User updated successfully",
+                    "user": {
+                        "id": user.id,
+                        "username": user.username,
+                        "email": user.email,
+                        "fullname": user.fullname,
+                        "role": user.role,
+                        "user_type": (
+                            user.user_type.value
+                            if isinstance(user.user_type, UserType)
+                            else user.user_type
+                        ),
+                        "is_ad_user": user.is_ad_user,
+                    },
+                }
+            ),
+            200,
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Update user by username error: {str(e)}", exc_info=True)
+        return jsonify({"message": "Internal server error"}), 500
+
+
 # Helper functions
+
+
+@jwt_required
+def _check_jwt_user() -> User:
+    # Get current user from JWT
+    sess_user_name = get_jwt_identity()
+    sess_user = User.query.filter_by(username=sess_user_name, deleted_at=None).first()
+    user_dict = sess_user.to_dict()
+    current_app.logger.info(f"sess_user = {user_dict}")
+
+    if not sess_user:
+        return jsonify({"message": "Current user not found"}), 401
+
+    return sess_user
 
 
 def _is_account_locked(username):

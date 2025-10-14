@@ -113,37 +113,37 @@
             </tr>
         </thead>
         <tbody>
-            {% for user in users %}
+            {% for profile in profiles %}
             <tr class="border-b hover:bg-gray-50">
                 <td class="px-4 py-3">
-                    <a href="{{ url_for('user_detail', id=user.id) }}"
+                    <a href="{{ url_for('user_detail', profile_id=profile.id) }}"
                        class="text-blue-600 hover:text-blue-800 font-medium hover:underline">
-                        {{ user.username }}
+                        {{ profile.username }}
                     </a>
                 </td>
                 <td class="px-4 py-3">
-                    {% if user.email %}
-                        <a href="{{ url_for('user_detail', id=user.id) }}"
+                    {% if profile.email %}
+                        <a href="{{ url_for('user_detail', profile_id=profile.id) }}"
                            class="text-blue-600 hover:text-blue-800 hover:underline">
-                            {{ user.email }}
+                            {{ profile.email }}
                         </a>
                     {% else %}
                         -
                     {% endif %}
                 </td>
                 <td class="px-4 py-3">
-                    {% if user.fullname %}
-                        <a href="{{ url_for('user_detail', id=user.id) }}"
+                    {% if profile.fullname %}
+                        <a href="{{ url_for('user_detail', profile_id=profile.id) }}"
                            class="text-blue-600 hover:text-blue-800 hover:underline">
-                            {{ user.fullname }}
+                            {{ profile.fullname }}
                         </a>
                     {% else %}
                         -
                     {% endif %}
                 </td>
                 <td class="px-4 py-3">
-                    {% if user.departments %}
-                        {% for dept in user.departments %}
+                    {% if profile.departments %}
+                        {% for dept in profile.departments %}
                             <span class="inline-block bg-gray-200 rounded px-2 py-1 text-xs mr-1 mb-1">{{ dept.name }}</span>
                         {% endfor %}
                     {% else %}
@@ -152,13 +152,13 @@
                 </td>
                 <td class="px-4 py-3">
                     <span class="px-2 py-1 rounded text-xs {% if session.user.role == 'ADMIN' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}">
-                        {{ user.role|upper }}
+                        {{ profile.role|upper }}
                     </span>
                 </td>
                 <td class="px-4 py-3">
-                    <button onclick="editUser({{ user.id }})"
+                    <button onclick="editUser({{ profile.id }})"
                             class="text-blue-500 hover:underline mr-2">Sửa</button>
-                    <button onclick="deleteUser({{ user.id }})"
+                    <button onclick="deleteUser({{ profile.id }})"
                             class="text-red-500 hover:underline">Xóa</button>
                 </td>
             </tr>
