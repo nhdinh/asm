@@ -126,4 +126,12 @@ def create_app():
     with app.app_context():
         db.create_all()
 
+    # Initialize event consumer for auth events
+    try:
+        from auth_event_consumer import init_auth_event_consumer
+        init_auth_event_consumer(app)
+        app.logger.info("Auth event consumer initialized")
+    except Exception as e:
+        app.logger.error(f"Failed to initialize auth event consumer: {str(e)}")
+
     return app

@@ -240,7 +240,12 @@ def logout():
     }
     """
     try:
-        current_profile_id = get_jwt_identity()
+        current_username = get_jwt_identity()
+        current_user = User.query.filter_by(username=current_username, deleted_at=None).first()
+
+        if not current_user:
+            return jsonify({"message": "User not found"}), 401
+
         jwt_data = get_jwt()
         access_jti = jwt_data.get("jti")
 
@@ -251,15 +256,15 @@ def logout():
 
         if revoke_all:
             # Revoke all tokens for user
-            count = token_manager.revoke_user_tokens(current_profile_id)
+            count = token_manager.revoke_user_tokens(current_user.id)
 
             # Mark all refresh tokens as revoked in database
             RefreshToken.query.filter_by(
-                user_id=current_profile_id, is_revoked=False
+                user_id=current_user.id, is_revoked=False
             ).update({"is_revoked": True, "revoked_at": datetime.utcnow()})
             db.session.commit()
 
-            logger.info(f"Revoked all {count} tokens for user ID: {current_profile_id}")
+            logger.info(f"Revoked all {count} tokens for user {current_username}")
             return jsonify({"message": "All sessions logged out successfully"}), 200
         else:
             # Revoke current access token
@@ -277,7 +282,7 @@ def logout():
                 )
                 db.session.commit()
 
-            logger.info(f"User ID {current_profile_id} logged out")
+            logger.info(f"User {current_username} logged out")
             return jsonify({"message": "Logged out successfully"}), 200
 
     except Exception as e:
@@ -301,8 +306,8 @@ def verify():
         current_profile_username = get_jwt_identity()
         jwt_data = get_jwt()
 
-        user = User.query.get(current_profile_id)
-        if not user or user.deleted_at:
+        user = User.query.filter_by(username=current_profile_username, deleted_at=None).first()
+        if not user:
             return jsonify({"valid": False, "message": "User not found"}), 401
 
         return (
@@ -352,7 +357,7 @@ def get_sessions():
         return jsonify({"message": "Internal server error"}), 500
 
 
-@auth_bp.route("/users/<str:username>/<str:email>", methods=["GET"])
+@auth_bp.route("/users/<string:username>/<string:email>", methods=["GET"])
 @jwt_required
 def get_user_by_username_or_email(username, email):
     """
@@ -385,7 +390,7 @@ def get_user_by_username_or_email(username, email):
         return jsonify({"message": "Internal server error"}), 500
 
 
-@auth_bp.route("/users/<str:username>", methods=["GET"])
+@auth_bp.route("/users/<string:username>", methods=["GET"])
 @jwt_required()
 def get_user_by_username(username):
     """
@@ -462,7 +467,9 @@ def get_user_by_id(user_id):
     try:
         # Get current user from JWT
         current_profile_username = get_jwt_identity()
-        current_profile = User.query.get(current_profile_id)
+        current_profile = User.query.filter_by(
+            username=current_profile_username, deleted_at=None
+        ).first()
 
         if not current_profile:
             return jsonify({"message": "Current user not found"}), 401
@@ -530,7 +537,9 @@ def list_users():
     try:
         # Get current user from JWT
         current_profile_username = get_jwt_identity()
-        current_profile = User.query.get(current_profile_id)
+        current_profile = User.query.filter_by(
+            username=current_profile_username, deleted_at=None
+        ).first()
 
         if not current_profile:
             return jsonify({"message": "Current user not found"}), 401
@@ -625,7 +634,9 @@ def create_user():
     try:
         # Get current user from JWT
         current_profile_username = get_jwt_identity()
-        current_profile = User.query.get(current_profile_id)
+        current_profile = User.query.filter_by(
+            username=current_profile_username, deleted_at=None
+        ).first()
 
         if not current_profile:
             return jsonify({"message": "Current user not found"}), 401
@@ -990,7 +1001,6 @@ def update_user_by_username(username):
 # Helper functions
 
 
-@jwt_required
 def _check_jwt_user() -> User:
     # Get current user from JWT
     sess_user_name = get_jwt_identity()

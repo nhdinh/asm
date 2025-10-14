@@ -4,6 +4,7 @@ from models import Profile, db, ProfileRole, UserActivity, Department, ActivityS
 from audit_logger import audit_logger
 from pagination import paginate_query, get_sort_params
 from message_broker import message_broker
+from datetime import datetime
 import csv
 import io
 
@@ -243,6 +244,23 @@ def create_user():
         current_app.logger.info(
             f"User {profile.username} created successfully in both auth and backend databases"
         )
+
+        # Publish user.created event to RabbitMQ
+        try:
+            message_broker.publish_user_created({
+                "username": profile.username,
+                "email": profile.email,
+                "fullname": profile.fullname,
+                "role": profile.role.value,
+                "user_type": profile.user_type,
+                "event": "user.created",
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            current_app.logger.info(f"Published user.created event for {profile.username}")
+        except Exception as e:
+            current_app.logger.error(f"Failed to publish user.created event: {str(e)}")
+            # Don't fail the request if event publishing fails
+
         return jsonify(profile.to_dict()), 201
 
     except Exception as e:
@@ -420,6 +438,24 @@ def update_user(id: int):
         current_app.logger.info(
             f"User {profile.username} updated successfully in both auth and backend databases"
         )
+
+        # Publish user.updated event to RabbitMQ
+        try:
+            message_broker.publish_user_updated({
+                "username": profile.username,
+                "email": profile.email,
+                "fullname": profile.fullname,
+                "role": profile.role.value,
+                "user_type": profile.user_type,
+                "event": "user.updated",
+                "timestamp": datetime.utcnow().isoformat(),
+                "old_username": old_values.get("username")  # In case username was changed
+            })
+            current_app.logger.info(f"Published user.updated event for {profile.username}")
+        except Exception as e:
+            current_app.logger.error(f"Failed to publish user.updated event: {str(e)}")
+            # Don't fail the request if event publishing fails
+
         return jsonify(profile.to_dict())
 
     except Exception as e:
@@ -477,6 +513,20 @@ def delete_user(id):
         details=f"Deleted user {username} (soft delete)",
         ip_address=request.remote_addr,
     )
+
+    # Publish user.deleted event to RabbitMQ
+    try:
+        message_broker.publish_user_deleted({
+            "username": username,
+            "user_id": id,
+            "event": "user.deleted",
+            "timestamp": datetime.utcnow().isoformat(),
+            "soft_delete": True
+        })
+        current_app.logger.info(f"Published user.deleted event for {username}")
+    except Exception as e:
+        current_app.logger.error(f"Failed to publish user.deleted event: {str(e)}")
+        # Don't fail the request if event publishing fails
 
     return "", 204
 
