@@ -310,7 +310,8 @@ class ApiClient:
     def create_user_and_profile(self, user_data):
         try:
             response = self.session.post(
-                f"{self.base_url}/auth/register", json=user_data, timeout=10
+                # f"{self.base_url}/auth/register", json=user_data, timeout=10
+                f"{self.base_url}/users", json=user_data, timeout=10
             )
             response.raise_for_status()
             return response.json()

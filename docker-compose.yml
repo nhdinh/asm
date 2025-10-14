@@ -25,8 +25,8 @@ services:
       - 5001:5001
     volumes:
       - ./auth/logs:/app/logs
-      - ./auth/src:/app/src
-      - ./auth/.env:/app/.env
+      - ./auth/src:/app/src:ro
+      - ./auth/.env:/app/.env:ro
     environment:
       FLASK_ENV: production
       AUTH_APP_SECRET: ${AUTH_APP_SECRET}
@@ -83,10 +83,9 @@ services:
     ports:
       - 5000:5000
     volumes:
-      - ./backend/data:/app/data
       - ./backend/logs:/app/logs
-      - ./backend/src:/app/src
-      - ./backend/.env:/app/.env
+      - ./backend/src:/app/src:ro
+      - ./backend/.env:/app/.env:ro
     environment:
       FLASK_ENV: production
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
@@ -130,8 +129,8 @@ services:
       - 3000:3000
     volumes:
       - ./frontend/logs/:/app/logs/
-      - ./frontend/src/:/app/src/
-      - ./frontend/templates/:/app/templates/
+      - ./frontend/src/:/app/src/:ro
+      - ./frontend/templates/:/app/templates/:ro
     environment:
       FLASK_ENV: production
       API_BASE_URL: http://backend:5000/api
@@ -212,14 +211,14 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin123}
       RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
     ports:
-      - "5672:5672"   # AMQP port
+      - "5672:5672" # AMQP port
       - "15672:15672" # Management UI
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - rabbitmq_log:/var/log/rabbitmq
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -265,8 +264,8 @@ services:
     image: mailhog/mailhog:latest
     container_name: ams-mailhog
     ports:
-      - "1025:1025"  # SMTP server
-      - "8025:8025"  # Web UI
+      - "1025:1025" # SMTP server
+      - "8025:8025" # Web UI
     networks:
       - asset-network
     restart: unless-stopped
@@ -287,16 +286,16 @@ services:
       DNS_FORWARDER: ${AD_DNS_FORWARDER:-8.8.8.8}
       HOST_IP: ${AD_HOST_IP:-172.18.0.100}
     ports:
-      - "10053:53/tcp"   # DNS
-      - "10053:53/udp"   # DNS
-      - "10088:88/tcp"   # Kerberos
-      - "10088:88/udp"   # Kerberos
-      - "10389:389/tcp"  # LDAP
-      - "10389:389/udp"  # LDAP
-      - "10445:445/tcp"  # SMB
-      - "10464:464/tcp"  # Kerberos Password
-      - "10464:464/udp"  # Kerberos Password
-      - "10636:636/tcp"  # LDAPS
+      - "10053:53/tcp" # DNS
+      - "10053:53/udp" # DNS
+      - "10088:88/tcp" # Kerberos
+      - "10088:88/udp" # Kerberos
+      - "10389:389/tcp" # LDAP
+      - "10389:389/udp" # LDAP
+      - "10445:445/tcp" # SMB
+      - "10464:464/tcp" # Kerberos Password
+      - "10464:464/udp" # Kerberos Password
+      - "10636:636/tcp" # LDAPS
       - "13268:3268/tcp" # Global Catalog
       - "13269:3269/tcp" # Global Catalog SSL
     volumes:
@@ -308,7 +307,7 @@ services:
         ipv4_address: ${AD_HOST_IP:-172.18.0.100}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "smbclient", "-L", "localhost", "-U", "%"]
+      test: [ "CMD", "smbclient", "-L", "localhost", "-U", "%" ]
       interval: 30s
       timeout: 10s
       retries: 5

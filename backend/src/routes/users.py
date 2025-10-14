@@ -14,10 +14,10 @@ users_bp = Blueprint("users", __name__)
 @users_bp.route("", methods=["GET"])
 @jwt_required()
 def get_users():
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
+    sess_username = get_jwt_identity()
+    sess_profile = Profile.query.filter_by(username=sess_username).first()
 
-    if current_profile.role != ProfileRole.ADMIN:
+    if sess_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     # Get sort parameters
@@ -73,7 +73,7 @@ def get_users():
         # Default sorting
         query = query.order_by(Profile.created_at.desc())
 
-    pagination_result = paginate_query(query, user=current_profile)
+    pagination_result = paginate_query(query, user=sess_profile)
 
     # Convert users to dict with error handling
     items = []
@@ -106,10 +106,10 @@ def create_user():
     from flask import current_app
     from auth_client import auth_client
 
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
+    sess_username = get_jwt_identity()
+    sess_profile = Profile.query.filter_by(username=sess_username).first()
 
-    if current_profile.role != ProfileRole.ADMIN:
+    if sess_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     data = request.json
@@ -211,8 +211,8 @@ def create_user():
 
         # Log activity
         activity = UserActivity(
-            user_id=current_profile.id,
-            username=current_profile.username,
+            user_id=sess_profile.id,
+            username=sess_profile.username,
             action="create",
             entity_type="user",
             entity_id=profile.id,
@@ -225,8 +225,8 @@ def create_user():
 
         # Audit log
         audit_logger.log(
-            user_id=current_profile.id,
-            username=current_profile.username,
+            user_id=sess_profile.id,
+            username=sess_profile.username,
             action="create",
             entity_type="user",
             entity_id=profile.id,
@@ -247,16 +247,20 @@ def create_user():
 
         # Publish user.created event to RabbitMQ
         try:
-            message_broker.publish_user_created({
-                "username": profile.username,
-                "email": profile.email,
-                "fullname": profile.fullname,
-                "role": profile.role.value,
-                "user_type": profile.user_type,
-                "event": "user.created",
-                "timestamp": datetime.utcnow().isoformat()
-            })
-            current_app.logger.info(f"Published user.created event for {profile.username}")
+            message_broker.publish_user_created(
+                {
+                    "username": profile.username,
+                    "email": profile.email,
+                    "fullname": profile.fullname,
+                    "role": profile.role.value,
+                    "user_type": profile.user_type,
+                    "event": "user.created",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
+            current_app.logger.info(
+                f"Published user.created event for {profile.username}"
+            )
         except Exception as e:
             current_app.logger.error(f"Failed to publish user.created event: {str(e)}")
             # Don't fail the request if event publishing fails
@@ -286,10 +290,10 @@ def create_user():
 @users_bp.route("/<int:id>", methods=["GET"])
 @jwt_required()
 def get_user(id):
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
+    sess_username = get_jwt_identity()
+    sess_profile = Profile.query.filter_by(username=sess_username).first()
 
-    if current_profile.role != ProfileRole.ADMIN and current_profile.id != id:
+    if sess_profile.role != ProfileRole.ADMIN and sess_profile.id != id:
         return jsonify({"message": "Unauthorized"}), 403
 
     user = Profile.query.get_or_404(id)
@@ -304,12 +308,10 @@ def update_user(id: int):
     from auth_client import auth_client
 
     try:
-        current_profile_username = get_jwt_identity()
-        current_profile = Profile.query.filter_by(
-            username=current_profile_username
-        ).first()
+        sess_username = get_jwt_identity()
+        sess_profile = Profile.query.filter_by(username=sess_username).first()
 
-        if current_profile.role != ProfileRole.ADMIN:
+        if sess_profile.role != ProfileRole.ADMIN:
             return jsonify({"message": "Unauthorized"}), 403
 
         profile = Profile.query.get_or_404(id)
@@ -350,7 +352,11 @@ def update_user(id: int):
         # IMPORTANT: Use username as the key, not ID, because backend Profile.id != auth User.id
         if auth_update_data:
             # Get the original username before update (in case username is being changed)
-            original_username = profile.username if "username" not in data else Profile.query.get(id).username
+            original_username = (
+                profile.username
+                if "username" not in data
+                else Profile.query.get(id).username
+            )
 
             success, _, error_msg = auth_client.update_user_by_username(
                 access_token, original_username, auth_update_data
@@ -411,8 +417,8 @@ def update_user(id: int):
 
         # Log activity
         activity = UserActivity(
-            user_id=current_profile.id,
-            username=current_profile.username,
+            user_id=sess_profile.id,
+            username=sess_profile.username,
             action="update_user",
             entity_type="user",
             entity_id=profile.id,
@@ -424,8 +430,8 @@ def update_user(id: int):
 
         # Audit log
         audit_logger.log(
-            user_id=current_profile.id,
-            username=current_profile.username,
+            user_id=sess_profile.id,
+            username=sess_profile.username,
             action="update",
             entity_type="user",
             entity_id=profile.id,
@@ -441,17 +447,23 @@ def update_user(id: int):
 
         # Publish user.updated event to RabbitMQ
         try:
-            message_broker.publish_user_updated({
-                "username": profile.username,
-                "email": profile.email,
-                "fullname": profile.fullname,
-                "role": profile.role.value,
-                "user_type": profile.user_type,
-                "event": "user.updated",
-                "timestamp": datetime.utcnow().isoformat(),
-                "old_username": old_values.get("username")  # In case username was changed
-            })
-            current_app.logger.info(f"Published user.updated event for {profile.username}")
+            message_broker.publish_user_updated(
+                {
+                    "username": profile.username,
+                    "email": profile.email,
+                    "fullname": profile.fullname,
+                    "role": profile.role.value,
+                    "user_type": profile.user_type,
+                    "event": "user.updated",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "old_username": old_values.get(
+                        "username"
+                    ),  # In case username was changed
+                }
+            )
+            current_app.logger.info(
+                f"Published user.updated event for {profile.username}"
+            )
         except Exception as e:
             current_app.logger.error(f"Failed to publish user.updated event: {str(e)}")
             # Don't fail the request if event publishing fails
@@ -470,13 +482,13 @@ def update_user(id: int):
 @users_bp.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
 def delete_user(id):
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
+    sess_username = get_jwt_identity()
+    sess_profile = Profile.query.filter_by(username=sess_username).first()
 
-    if current_profile.role != ProfileRole.ADMIN:
+    if sess_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
-    if current_profile.id == id:
+    if sess_profile.id == id:
         return jsonify({"message": "Cannot delete yourself"}), 400
 
     profile = Profile.query.get_or_404(id)
@@ -490,8 +502,8 @@ def delete_user(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="delete_user",
         entity_type="user",
         entity_id=id,
@@ -503,8 +515,8 @@ def delete_user(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="delete",
         entity_type="user",
         entity_id=id,
@@ -516,13 +528,15 @@ def delete_user(id):
 
     # Publish user.deleted event to RabbitMQ
     try:
-        message_broker.publish_user_deleted({
-            "username": username,
-            "user_id": id,
-            "event": "user.deleted",
-            "timestamp": datetime.utcnow().isoformat(),
-            "soft_delete": True
-        })
+        message_broker.publish_user_deleted(
+            {
+                "username": username,
+                "user_id": id,
+                "event": "user.deleted",
+                "timestamp": datetime.utcnow().isoformat(),
+                "soft_delete": True,
+            }
+        )
         current_app.logger.info(f"Published user.deleted event for {username}")
     except Exception as e:
         current_app.logger.error(f"Failed to publish user.deleted event: {str(e)}")
@@ -535,14 +549,14 @@ def delete_user(id):
 @jwt_required()
 def force_logout(id):
     """Force a user to logout by changing their password and requiring password change"""
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
+    sess_username = get_jwt_identity()
+    sess_profile = Profile.query.filter_by(username=sess_username).first()
 
-    if current_profile.role != ProfileRole.ADMIN:
+    if sess_profile.role != ProfileRole.ADMIN:
         return jsonify({"message": "Unauthorized"}), 403
 
     # Prevent admin from logging out themselves
-    if id == current_profile_id:
+    if id == sess_profile.id:
         return jsonify({"message": "Cannot force logout yourself"}), 400
 
     user = Profile.query.get_or_404(id)
@@ -561,8 +575,8 @@ def force_logout(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="force_logout",
         entity_type="user",
         entity_id=id,
@@ -575,8 +589,8 @@ def force_logout(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="force_logout",
         entity_type="user",
         entity_id=id,
