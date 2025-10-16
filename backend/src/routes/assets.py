@@ -1,5 +1,6 @@
 from flask import Blueprint, current_app, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from routes.helpers import require_manager_role
 from models import (
     Profile,
     db,
@@ -180,31 +181,16 @@ def get_assets():
 
 @asset_bp.route("", methods=["POST"])
 @jwt_required()
-def create_asset():
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
-
-    # Regular users (non-managers) cannot create assets
-    if current_profile.role == ProfileRole.USER:
-        # Check if user is a manager of any department
-        is_manager = any(
-            assoc.is_manager for assoc in current_profile.department_associations
-        )
-        if not is_manager:
-            return (
-                jsonify(
-                    {"message": "Unauthorized - regular users cannot create assets"}
-                ),
-                403,
-            )
-
+@require_manager_role("Unauthorized - regular users cannot create assets")
+def create_asset(**kwargs):
     data = request.json
+    sess_profile = kwargs.get("sess_profile")
 
     # Check permissions - Managers can only create assets for departments they manage
-    if current_profile.role == ProfileRole.USER:
+    if sess_profile.role == ProfileRole.USER:
         managed_dept_ids = [
             assoc.department_id
-            for assoc in current_profile.department_associations
+            for assoc in sess_profile.department_associations
             if assoc.is_manager
         ]
         if data.get("department_id") not in managed_dept_ids:
@@ -292,15 +278,15 @@ def create_asset():
             asset_id=asset.id,
             to_department_id=assigned_to_department,
             assigned_to_id=assigned_to_user,
-            transferred_by=current_profile_id,
+            transferred_by=sess_profile.id,
             notes=f"Bàn giao tài sản lần đầu tiên",
         )
         db.session.add(transfer)
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="create_asset",
         entity_type="asset",
         entity_id=asset.id,
@@ -312,8 +298,8 @@ def create_asset():
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="create",
         entity_type="asset",
         entity_id=asset.id,

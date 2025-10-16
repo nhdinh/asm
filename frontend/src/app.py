@@ -19,12 +19,16 @@ def create_app():
     app.secret_key = os.getenv("FRONTEND_APP_SECRET", "frontend-secret-key")
     app.config["API_BASE_URL"] = API_BASE_URL
 
+    log_path = "../logs/"
+    log_file = "frontend.log"
+
     # Setup logging
     if not app.debug:
-        if not os.path.exists("logs"):
-            os.mkdir("logs")
+        if not os.path.exists(log_path):
+            os.mkdir(log_path)
+
         file_handler = RotatingFileHandler(
-            "logs/frontend.log", maxBytes=10240, backupCount=10
+            os.path.join(log_path, log_file), maxBytes=10240, backupCount=10
         )
         file_handler.setFormatter(
             logging.Formatter(

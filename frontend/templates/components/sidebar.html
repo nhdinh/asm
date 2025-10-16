@@ -19,6 +19,9 @@
         <a href="{{ url_for('transfers') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint == 'transfers' %}active-menu{% endif %}">
             🔄 Điều Chuyển TS
         </a>
+        <a href="{{ url_for('equipment_requests') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'equipment_requests' in request.endpoint %}active-menu{% endif %}">
+            📝 Yêu Cầu Trang Thiết Bị
+        </a>
         {% if session.user and session.user.role == 'ADMIN' %}
         <a href="{{ url_for('users') }}" class="menu-item block px-4 py-3 hover:bg-gray-700 {% if request.endpoint and 'users' in request.endpoint %}active-menu{% endif %}">
             👥 Người Dùng

@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, AssetCategory, Profile, ProfileRole, UserActivity, ActivityStatus
+from flask_jwt_extended import jwt_required
+from routes.helpers import require_admin_role
+from models import db, AssetCategory, UserActivity, ActivityStatus
 from audit_logger import audit_logger
 from pagination import paginate_query, create_pagination_response, get_sort_params
 
@@ -9,9 +10,9 @@ category_bp = Blueprint("categories", __name__)
 
 @category_bp.route("", methods=["GET"])
 @jwt_required()
-def get_categories():
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
+@require_admin_role
+def get_categories(**kwargs):
+    sess_profile = kwargs.get("sess_profile")
 
     # Get sort parameters
     sort_by, sort_order = get_sort_params()
@@ -46,7 +47,7 @@ def get_categories():
         # Default sorting
         query = query.order_by(AssetCategory.name)
 
-    pagination_result = paginate_query(query, user=current_profile)
+    pagination_result = paginate_query(query, user=sess_profile)
 
     return jsonify(create_pagination_response(pagination_result, lambda c: c.to_dict()))
 
@@ -60,19 +61,9 @@ def get_category(id):
 
 @category_bp.route("", methods=["POST"])
 @jwt_required()
-def create_category():
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
-
-    # Only admins can create categories
-    if current_profile.role != ProfileRole.ADMIN:
-        return (
-            jsonify(
-                {"message": "Unauthorized - only administrators can create categories"}
-            ),
-            403,
-        )
-
+@require_admin_role
+def create_category(**kwargs):
+    sess_profile = kwargs.get("sess_profile")
     data = request.json
 
     # Check if category already exists
@@ -86,8 +77,8 @@ def create_category():
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="create_category",
         entity_type="asset_category",
         entity_id=category.id,
@@ -99,8 +90,8 @@ def create_category():
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="create",
         entity_type="asset_category",
         entity_id=category.id,
@@ -114,18 +105,9 @@ def create_category():
 
 @category_bp.route("/<int:id>", methods=["PUT"])
 @jwt_required()
-def update_category(id):
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
-
-    # Only admins can update categories
-    if current_profile.role != ProfileRole.ADMIN:
-        return (
-            jsonify(
-                {"message": "Unauthorized - only administrators can update categories"}
-            ),
-            403,
-        )
+@require_admin_role
+def update_category(id, **kwargs):
+    sess_profile = kwargs.get("sess_profile")
 
     category = AssetCategory.query.get_or_404(id)
     data = request.json
@@ -144,8 +126,8 @@ def update_category(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="update_category",
         entity_type="asset_category",
         entity_id=category.id,
@@ -157,8 +139,8 @@ def update_category(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="update",
         entity_type="asset_category",
         entity_id=category.id,
@@ -173,19 +155,9 @@ def update_category(id):
 
 @category_bp.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
-def delete_category(id):
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
-
-    # Only admins can delete categories
-    if current_profile.role != ProfileRole.ADMIN:
-        return (
-            jsonify(
-                {"message": "Unauthorized - only administrators can delete categories"}
-            ),
-            403,
-        )
-
+@require_admin_role
+def delete_category(id, **kwargs):
+    sess_profile = kwargs.get("sess_profile")
     category = AssetCategory.query.get_or_404(id)
 
     # Check if category has assets
@@ -199,8 +171,8 @@ def delete_category(id):
 
     # Log activity
     activity = UserActivity(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="delete_category",
         entity_type="asset_category",
         entity_id=id,
@@ -212,8 +184,8 @@ def delete_category(id):
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action="delete",
         entity_type="asset_category",
         entity_id=id,

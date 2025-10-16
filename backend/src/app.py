@@ -18,9 +18,10 @@ db = SQLAlchemy()
 jwt = JWTManager()
 migrate = Migrate()
 
-# Import audit logger and session manager
+# Import audit logger, session manager and settings cache
 from audit_logger import audit_logger
 from session_manager import session_manager
+from settings_cache import settings_cache
 
 db_user = None
 db_password = None
@@ -59,6 +60,7 @@ def create_app():
     app.config["JWT_TOKEN_LOCATION"] = ["headers"]
     app.config["JWT_HEADER_NAME"] = "Authorization"
     app.config["JWT_HEADER_TYPE"] = "Bearer"
+
     # Disable CSRF protection for API (tokens are in Authorization header)
     app.config["JWT_COOKIE_CSRF_PROTECT"] = False
 
@@ -68,18 +70,22 @@ def create_app():
     migrate.init_app(app, db)
     audit_logger.init_app(app)
     session_manager.init_app(app)
+    settings_cache.init_app(app)
 
     # Store Redis client in app extensions for email queue access
     app.extensions["redis"] = audit_logger.redis_client
 
     CORS(app)
 
+    log_path = "./logs"
+    log_file = "frontend.log"
+
     # Setup logging
     if not app.debug:
-        if not os.path.exists("logs"):
-            os.mkdir("logs")
+        if not os.path.exists(log_path):
+            os.mkdir(log_path)
         file_handler = RotatingFileHandler(
-            "logs/backend.log", maxBytes=10240, backupCount=10
+            os.path.join(log_path, log_file), maxBytes=10240, backupCount=10
         )
         file_handler.setFormatter(
             logging.Formatter(
@@ -104,6 +110,7 @@ def create_app():
     from routes.email_settings import email_settings_bp
     from routes.trash import trash_bp
     from routes.sessions import sessions_bp
+    from routes.equipment_requests import bp as equipment_requests_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(dept_bp, url_prefix="/api/departments")
@@ -117,6 +124,7 @@ def create_app():
     app.register_blueprint(email_settings_bp, url_prefix="/api/email-settings")
     app.register_blueprint(trash_bp, url_prefix="/api/trash")
     app.register_blueprint(sessions_bp, url_prefix="/api/sessions")
+    app.register_blueprint(equipment_requests_bp)
 
     # Health check endpoint
     @app.route("/api/health")
@@ -129,6 +137,7 @@ def create_app():
     # Initialize event consumer for auth events
     try:
         from auth_event_consumer import init_auth_event_consumer
+
         init_auth_event_consumer(app)
         app.logger.info("Auth event consumer initialized")
     except Exception as e:

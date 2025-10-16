@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}Yêu Cầu Trang Thiết Bị - Hệ Thống Quản Lý Tài Sản{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <div class="flex justify-between items-center">
+        <h1 class="text-3xl font-bold text-gray-800">📝 Yêu Cầu Trang Thiết Bị Văn Phòng</h1>
+        <a href="{{ url_for('equipment_request_create') }}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+            ➕ Tạo Yêu Cầu Mới
+        </a>
+    </div>
+</div>
+
+<!-- Filter tabs -->
+<div class="bg-white rounded-lg shadow-md mb-6">
+    <div class="border-b border-gray-200">
+        <nav class="flex -mb-px">
+            <a href="{{ url_for('equipment_requests') }}"
+               class="px-6 py-3 border-b-2 font-medium text-sm {% if not status_filter %}border-blue-500 text-blue-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
+                Tất Cả ({{ total_count }})
+            </a>
+            <a href="{{ url_for('equipment_requests', status='draft') }}"
+               class="px-6 py-3 border-b-2 font-medium text-sm {% if status_filter == 'draft' %}border-blue-500 text-blue-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
+                Bản Nháp
+            </a>
+            <a href="{{ url_for('equipment_requests', status='pending_manager_approval') }}"
+               class="px-6 py-3 border-b-2 font-medium text-sm {% if status_filter == 'pending_manager_approval' %}border-blue-500 text-blue-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
+                Chờ Phê Duyệt
+            </a>
+            <a href="{{ url_for('equipment_requests', status='approved') }}"
+               class="px-6 py-3 border-b-2 font-medium text-sm {% if status_filter == 'approved' %}border-blue-500 text-blue-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
+                Đã Phê Duyệt
+            </a>
+            <a href="{{ url_for('equipment_requests', status='completed') }}"
+               class="px-6 py-3 border-b-2 font-medium text-sm {% if status_filter == 'completed' %}border-blue-500 text-blue-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
+                Hoàn Thành
+            </a>
+        </nav>
+    </div>
+</div>
+
+<!-- Requests list -->
+<div class="bg-white rounded-lg shadow-md overflow-hidden">
+    {% if requests %}
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mã Phiếu</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tiêu Đề</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Người Yêu Cầu</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phòng Ban</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mức Độ</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trạng Thái</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ngày Tạo</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thao Tác</th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+            {% for req in requests %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {{ req.request_code }}
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-900">
+                    {{ req.request_title }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {{ req.requester_name or req.requester_username }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {{ req.department_name }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    {% if req.urgency_level == 'urgent' %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                        🔴 Khẩn Cấp
+                    </span>
+                    {% elif req.urgency_level == 'high' %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800">
+                        🟠 Cao
+                    </span>
+                    {% else %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                        🟢 Bình Thường
+                    </span>
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    {% if req.status == 'draft' %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                        📝 Bản Nháp
+                    </span>
+                    {% elif req.status == 'pending_manager_approval' %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                        ⏳ Chờ Phê Duyệt
+                    </span>
+                    {% elif req.status == 'approved' %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                        ✅ Đã Phê Duyệt
+                    </span>
+                    {% elif req.status == 'rejected' %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                        ❌ Từ Chối
+                    </span>
+                    {% elif req.status == 'completed' %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                        ✔️ Hoàn Thành
+                    </span>
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {{ req.created_at[:10] }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <a href="{{ url_for('equipment_request_detail', request_id=req.id) }}" class="text-blue-600 hover:text-blue-900 mr-3">
+                        👁️ Xem
+                    </a>
+                    {% if req.status == 'draft' and req.requester_id == session.user.id %}
+                    <a href="{{ url_for('equipment_request_edit', request_id=req.id) }}" class="text-green-600 hover:text-green-900">
+                        ✏️ Sửa
+                    </a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Pagination -->
+    {% if pages > 1 %}
+    <div class="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
+        <div class="flex items-center justify-between">
+            <div class="flex-1 flex justify-between sm:hidden">
+                {% if page > 1 %}
+                <a href="{{ url_for('equipment_requests', page=page-1, status=status_filter) }}" class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                    Trước
+                </a>
+                {% endif %}
+                {% if page < pages %}
+                <a href="{{ url_for('equipment_requests', page=page+1, status=status_filter) }}" class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                    Sau
+                </a>
+                {% endif %}
+            </div>
+            <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm text-gray-700">
+                        Hiển thị <span class="font-medium">{{ (page - 1) * per_page + 1 }}</span> đến <span class="font-medium">{{ min(page * per_page, total) }}</span> trong tổng số <span class="font-medium">{{ total }}</span> phiếu
+                    </p>
+                </div>
+                <div>
+                    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                        {% for p in range(1, pages + 1) %}
+                        <a href="{{ url_for('equipment_requests', page=p, status=status_filter) }}" class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium {% if p == page %}text-blue-600 bg-blue-50{% else %}text-gray-700 hover:bg-gray-50{% endif %}">
+                            {{ p }}
+                        </a>
+                        {% endfor %}
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="text-center py-12">
+        <p class="text-gray-500 text-lg">📭 Chưa có phiếu yêu cầu nào</p>
+        <a href="{{ url_for('equipment_request_create') }}" class="mt-4 inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+            Tạo Phiếu Đầu Tiên
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}

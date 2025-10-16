@@ -241,7 +241,9 @@ def logout():
     """
     try:
         current_username = get_jwt_identity()
-        current_user = User.query.filter_by(username=current_username, deleted_at=None).first()
+        current_user = User.query.filter_by(
+            username=current_username, deleted_at=None
+        ).first()
 
         if not current_user:
             return jsonify({"message": "User not found"}), 401
@@ -306,7 +308,9 @@ def verify():
         current_profile_username = get_jwt_identity()
         jwt_data = get_jwt()
 
-        user = User.query.filter_by(username=current_profile_username, deleted_at=None).first()
+        user = User.query.filter_by(
+            username=current_profile_username, deleted_at=None
+        ).first()
         if not user:
             return jsonify({"valid": False, "message": "User not found"}), 401
 
@@ -378,10 +382,7 @@ def get_user_by_username_or_email(username, email):
     """
     try:
         # Get current user from JWT
-        sess_profile_username = get_jwt_identity()
-        sess_user = User.query.filter_by(
-            username=sess_profile_username, delete_at=None
-        ).first()
+        sess_user = _get_jwt_user()
 
         if not sess_user:
             return jsonify({"message": "Current user not found"}), 401
@@ -410,7 +411,7 @@ def get_user_by_username(username):
     }
     """
     try:
-        sess_user = _check_jwt_user()
+        sess_user = _get_jwt_user()
 
         # Find user by username (excluding deleted users)
         user = User.query.filter_by(username=username, deleted_at=None).first()
@@ -1001,7 +1002,7 @@ def update_user_by_username(username):
 # Helper functions
 
 
-def _check_jwt_user() -> User:
+def _get_jwt_user() -> User:
     # Get current user from JWT
     sess_user_name = get_jwt_identity()
     sess_user = User.query.filter_by(username=sess_user_name, deleted_at=None).first()

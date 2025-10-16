@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+
+{% block title %}Tạo Yêu Cầu Trang Thiết Bị - Hệ Thống Quản Lý Tài Sản{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <h1 class="text-3xl font-bold text-gray-800">📝 Phiếu Yêu Cầu Cung Cấp Trang Thiết Bị Văn Phòng</h1>
+    <p class="text-gray-600 mt-2">Điền thông tin yêu cầu và ký điện tử để gửi phê duyệt</p>
+</div>
+
+<form id="requestForm" class="space-y-6">
+    <!-- Basic Information -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold mb-4">📋 Thông Tin Cơ Bản</h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Phòng Ban <span class="text-red-500">*</span></label>
+                <select id="department_id" name="department_id" required class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">Chọn phòng ban</option>
+                    {% for dept in user_departments %}
+                    <option value="{{ dept.id }}">{{ dept.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Mức Độ Ưu Tiên <span class="text-red-500">*</span></label>
+                <select id="urgency_level" name="urgency_level" required class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="normal">🟢 Bình Thường</option>
+                    <option value="high">🟠 Cao</option>
+                    <option value="urgent">🔴 Khẩn Cấp</option>
+                </select>
+            </div>
+
+            <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Tiêu Đề Yêu Cầu <span class="text-red-500">*</span></label>
+                <input type="text" id="request_title" name="request_title" required
+                       class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                       placeholder="VD: Yêu cầu laptop cho nhân viên mới">
+            </div>
+
+            <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Lý Do Yêu Cầu <span class="text-red-500">*</span></label>
+                <textarea id="justification" name="justification" required rows="4"
+                          class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Mô tả chi tiết lý do cần thiết bị này..."></textarea>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Ngày Mong Muốn Nhận</label>
+                <input type="date" id="expected_date" name="expected_date"
+                       class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+        </div>
+    </div>
+
+    <!-- Equipment Items -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold">🛠️ Danh Sách Trang Thiết Bị</h2>
+            <button type="button" onclick="addEquipmentItem()" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-sm">
+                ➕ Thêm Món Đồ
+            </button>
+        </div>
+
+        <div id="equipmentItems" class="space-y-4">
+            <!-- Items will be added here dynamically -->
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="flex justify-between items-center">
+        <a href="{{ url_for('equipment_requests') }}" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-6 rounded">
+            ← Quay Lại
+        </a>
+        <div class="space-x-3">
+            <button type="button" onclick="saveAsDraft()" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-6 rounded">
+                💾 Lưu Nháp
+            </button>
+            <button type="button" onclick="showSignatureModal()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded">
+                ✍️ Ký & Gửi Phê Duyệt
+            </button>
+        </div>
+    </div>
+</form>
+
+<!-- Signature Modal -->
+<div id="signatureModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">✍️ Ký Điện Tử</h3>
+
+            <div class="border-2 border-gray-300 rounded-md mb-4">
+                <canvas id="signatureCanvas" class="w-full" height="200"></canvas>
+            </div>
+
+            <div class="flex justify-between items-center mb-4">
+                <button type="button" onclick="clearSignature()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded text-sm">
+                    🗑️ Xóa Chữ Ký
+                </button>
+                <p class="text-sm text-gray-600">Vẽ chữ ký của bạn trong khung trên</p>
+            </div>
+
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeSignatureModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">
+                    Hủy
+                </button>
+                <button type="button" onclick="submitWithSignature()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    ✅ Xác Nhận & Gửi
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let itemCounter = 0;
+let signatureCanvas, signatureCtx;
+let isDrawing = false;
+let categories = {{ categories|tojson }};
+
+// Initialize signature canvas
+document.addEventListener('DOMContentLoaded', function() {
+    signatureCanvas = document.getElementById('signatureCanvas');
+    signatureCtx = signatureCanvas.getContext('2d');
+
+    // Set canvas width to match container
+    signatureCanvas.width = signatureCanvas.offsetWidth;
+
+    // Drawing events
+    signatureCanvas.addEventListener('mousedown', startDrawing);
+    signatureCanvas.addEventListener('mousemove', draw);
+    signatureCanvas.addEventListener('mouseup', stopDrawing);
+    signatureCanvas.addEventListener('mouseout', stopDrawing);
+
+    // Touch events for mobile
+    signatureCanvas.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousedown', {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        signatureCanvas.dispatchEvent(mouseEvent);
+    });
+
+    signatureCanvas.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousemove', {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        signatureCanvas.dispatchEvent(mouseEvent);
+    });
+
+    signatureCanvas.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        const mouseEvent = new MouseEvent('mouseup', {});
+        signatureCanvas.dispatchEvent(mouseEvent);
+    });
+
+    // Add first equipment item
+    addEquipmentItem();
+});
+
+function startDrawing(e) {
+    isDrawing = true;
+    const rect = signatureCanvas.getBoundingClientRect();
+    signatureCtx.beginPath();
+    signatureCtx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+}
+
+function draw(e) {
+    if (!isDrawing) return;
+    const rect = signatureCanvas.getBoundingClientRect();
+    signatureCtx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    signatureCtx.stroke();
+}
+
+function stopDrawing() {
+    isDrawing = false;
+}
+
+function clearSignature() {
+    signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+}
+
+function addEquipmentItem() {
+    itemCounter++;
+    const itemHtml = `
+        <div id="item-${itemCounter}" class="border border-gray-200 rounded-md p-4 bg-gray-50">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="font-medium text-gray-700">Món đồ #${itemCounter}</h3>
+                ${itemCounter > 1 ? `<button type="button" onclick="removeEquipmentItem(${itemCounter})" class="text-red-500 hover:text-red-700">❌ Xóa</button>` : ''}
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Tên Trang Thiết Bị <span class="text-red-500">*</span></label>
+                    <input type="text" name="item_name_${itemCounter}" required
+                           class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="VD: Laptop Dell Latitude 5420">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Loại Trang Thiết Bị</label>
+                    <select name="item_category_${itemCounter}" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Chọn loại</option>
+                        ${categories.map(cat => `<option value="${cat.id}">${cat.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Số Lượng <span class="text-red-500">*</span></label>
+                    <input type="number" name="item_quantity_${itemCounter}" required min="1" value="1"
+                           class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Thông Số Kỹ Thuật</label>
+                    <textarea name="item_specifications_${itemCounter}" rows="2"
+                              class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="VD: Core i5, 8GB RAM, 256GB SSD"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Giá Ước Tính (VNĐ)</label>
+                    <input type="number" name="item_price_${itemCounter}" min="0"
+                           class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="0">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Ghi Chú</label>
+                    <input type="text" name="item_notes_${itemCounter}"
+                           class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+        </div>
+    `;
+    document.getElementById('equipmentItems').insertAdjacentHTML('beforeend', itemHtml);
+}
+
+function removeEquipmentItem(id) {
+    document.getElementById(`item-${id}`).remove();
+}
+
+function getFormData() {
+    const formData = {
+        department_id: parseInt(document.getElementById('department_id').value),
+        request_title: document.getElementById('request_title').value,
+        justification: document.getElementById('justification').value,
+        urgency_level: document.getElementById('urgency_level').value,
+        expected_date: document.getElementById('expected_date').value || null,
+        items: []
+    };
+
+    // Collect items
+    for (let i = 1; i <= itemCounter; i++) {
+        const nameInput = document.querySelector(`input[name="item_name_${i}"]`);
+        if (nameInput && document.getElementById(`item-${i}`)) {
+            const item = {
+                equipment_name: nameInput.value,
+                category_id: parseInt(document.querySelector(`select[name="item_category_${i}"]`).value) || null,
+                quantity: parseInt(document.querySelector(`input[name="item_quantity_${i}"]`).value),
+                specifications: document.querySelector(`textarea[name="item_specifications_${i}"]`).value || null,
+                estimated_price: parseFloat(document.querySelector(`input[name="item_price_${i}"]`).value) || null,
+                notes: document.querySelector(`input[name="item_notes_${i}"]`).value || null
+            };
+            formData.items.push(item);
+        }
+    }
+
+    return formData;
+}
+
+function validateForm() {
+    const formData = getFormData();
+
+    if (!formData.department_id) {
+        alert('Vui lòng chọn phòng ban!');
+        return false;
+    }
+
+    if (!formData.request_title) {
+        alert('Vui lòng nhập tiêu đề yêu cầu!');
+        return false;
+    }
+
+    if (!formData.justification) {
+        alert('Vui lòng nhập lý do yêu cầu!');
+        return false;
+    }
+
+    if (formData.items.length === 0) {
+        alert('Vui lòng thêm ít nhất một món đồ!');
+        return false;
+    }
+
+    return true;
+}
+
+async function saveAsDraft() {
+    if (!validateForm()) return;
+
+    const formData = getFormData();
+
+    try {
+        const response = await fetch('/equipment-requests/create', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            alert('✅ Đã lưu bản nháp thành công!');
+            window.location.href = '/equipment-requests';
+        } else {
+            alert('❌ Lỗi: ' + (result.error || 'Không thể lưu bản nháp'));
+        }
+    } catch (error) {
+        alert('❌ Lỗi kết nối: ' + error.message);
+    }
+}
+
+function showSignatureModal() {
+    if (!validateForm()) return;
+    document.getElementById('signatureModal').classList.remove('hidden');
+}
+
+function closeSignatureModal() {
+    document.getElementById('signatureModal').classList.add('hidden');
+    clearSignature();
+}
+
+async function submitWithSignature() {
+    // Check if signature is drawn
+    const imageData = signatureCtx.getImageData(0, 0, signatureCanvas.width, signatureCanvas.height);
+    const pixels = imageData.data;
+    let hasSignature = false;
+
+    for (let i = 3; i < pixels.length; i += 4) {
+        if (pixels[i] > 0) {
+            hasSignature = true;
+            break;
+        }
+    }
+
+    if (!hasSignature) {
+        alert('Vui lòng ký vào khung bên trên!');
+        return;
+    }
+
+    const formData = getFormData();
+    const signatureData = signatureCanvas.toDataURL('image/png');
+
+    try {
+        // Create request first
+        const createResponse = await fetch('/equipment-requests/create', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+        });
+
+        const createResult = await createResponse.json();
+
+        if (!createResponse.ok) {
+            alert('❌ Lỗi tạo phiếu: ' + (createResult.error || 'Không thể tạo phiếu'));
+            return;
+        }
+
+        // Then sign it
+        const signResponse = await fetch(`/equipment-requests/${createResult.id}/sign`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ signature: signatureData })
+        });
+
+        const signResult = await signResponse.json();
+
+        if (signResponse.ok) {
+            alert('✅ Đã ký và gửi phiếu thành công!');
+            window.location.href = '/equipment-requests';
+        } else {
+            alert('❌ Lỗi ký phiếu: ' + (signResult.error || 'Không thể ký phiếu'));
+        }
+    } catch (error) {
+        alert('❌ Lỗi kết nối: ' + error.message);
+    }
+}
+</script>
+{% endblock %}

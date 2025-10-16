@@ -1,5 +1,5 @@
 from enum import StrEnum
-from flask import Flask
+from flask import Flask, current_app
 import requests
 
 
@@ -311,7 +311,9 @@ class ApiClient:
         try:
             response = self.session.post(
                 # f"{self.base_url}/auth/register", json=user_data, timeout=10
-                f"{self.base_url}/users", json=user_data, timeout=10
+                f"{self.base_url}/users",
+                json=user_data,
+                timeout=10,
             )
             response.raise_for_status()
             return response.json()
@@ -653,6 +655,7 @@ class ApiClient:
             response = self.session.get(
                 f"{self.base_url}/categories", params=params, timeout=10
             )
+
             response.raise_for_status()
             return response.json()
         except Exception as e:

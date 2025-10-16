@@ -128,6 +128,7 @@ def create_app():
     # Initialize event consumer for user events from backend
     try:
         from user_event_consumer import init_user_event_consumer
+
         init_user_event_consumer(app)
         app.logger.info("User event consumer initialized")
     except Exception as e:

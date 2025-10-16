@@ -1,4 +1,5 @@
 from enum import StrEnum
+from urllib.error import HTTPError
 from app import create_app
 from flask import (
     current_app,
@@ -2037,6 +2038,7 @@ def categories():
 
     except Exception as e:
         app.logger.exception(e)
+
         categories_list = []
         pagination = None
         filters = {}
@@ -2181,6 +2183,11 @@ def terminate_user_sessions(user_id):
         flash(f"Lỗi: {str(e)}", "danger")
 
     return redirect(url_for("sessions"))
+
+
+# Equipment Request Routes
+from equipment_request_routes import register_equipment_request_routes
+register_equipment_request_routes(app, get_api_client, login_required)
 
 
 # Error handlers

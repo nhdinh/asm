@@ -1,7 +1,9 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, Profile, ProfileRole, SystemSetting
+from flask_jwt_extended import jwt_required
+from routes.helpers import require_admin_role
+from models import db, SystemSetting
 from audit_logger import audit_logger
+from settings_cache import settings_cache
 
 settings_bp = Blueprint("settings", __name__)
 
@@ -78,57 +80,66 @@ def init_default_settings():
 
 @settings_bp.route("", methods=["GET"])
 @jwt_required()
-def get_settings():
+@require_admin_role
+def get_settings(**kwargs):
     """Get all system settings (admin only)"""
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
-
-    if current_profile.role != ProfileRole.ADMIN:
-        return jsonify({"message": "Unauthorized"}), 403
+    # Try to get from Redis cache first
+    cached_settings = settings_cache.get_all_settings()
+    if cached_settings is not None:
+        return jsonify(cached_settings)
 
     # Initialize defaults if needed
     init_default_settings()
 
+    # Get from database
     settings = SystemSetting.query.all()
-    return jsonify([s.to_dict() for s in settings])
+    settings_list = [s.to_dict() for s in settings]
+
+    # Cache the results in Redis
+    settings_cache.set_all_settings(settings_list)
+
+    return jsonify(settings_list)
 
 
 @settings_bp.route("/<key>", methods=["GET"])
 @jwt_required()
-def get_setting(key):
+@require_admin_role
+def get_setting(key, **kwargs):
     """Get a specific setting"""
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
+    # Try to get from Redis cache first
+    cached_setting = settings_cache.get_setting(key)
+    if cached_setting is not None:
+        return jsonify(cached_setting)
 
-    if current_profile.role != ProfileRole.ADMIN:
-        return jsonify({"message": "Unauthorized"}), 403
-
+    # Get from database
     setting = SystemSetting.query.filter_by(key=key).first()
     if not setting:
         # Return default if exists
         if key in DEFAULT_SETTINGS:
-            return jsonify(
-                {
-                    "key": key,
-                    "value": DEFAULT_SETTINGS[key]["value"],
-                    "description": DEFAULT_SETTINGS[key]["description"],
-                    "data_type": DEFAULT_SETTINGS[key]["data_type"],
-                }
-            )
+            default_data = {
+                "key": key,
+                "value": DEFAULT_SETTINGS[key]["value"],
+                "description": DEFAULT_SETTINGS[key]["description"],
+                "data_type": DEFAULT_SETTINGS[key]["data_type"],
+            }
+            # Cache default setting
+            settings_cache.set_setting(key, default_data)
+            return jsonify(default_data)
         return jsonify({"message": "Setting not found"}), 404
 
-    return jsonify(setting.to_dict())
+    setting_data = setting.to_dict()
+    # Cache the setting
+    settings_cache.set_setting(key, setting_data)
+
+    return jsonify(setting_data)
 
 
 @settings_bp.route("/<key>", methods=["PUT"])
 @jwt_required()
-def update_setting(key):
+@require_admin_role
+def update_setting(key, **kwargs):
     """Update a setting"""
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
-
-    if current_profile.role != ProfileRole.ADMIN:
-        return jsonify({"message": "Unauthorized"}), 403
+    sess_profile = kwargs.get("sess_profile")
 
     data = request.json
     new_value = data.get("value")
@@ -148,7 +159,7 @@ def update_setting(key):
             value=str(new_value),
             description=DEFAULT_SETTINGS[key]["description"],
             data_type=DEFAULT_SETTINGS[key]["data_type"],
-            updated_by=current_profile_id,
+            updated_by=sess_profile.id,
         )
         db.session.add(setting)
         action = "create"
@@ -156,15 +167,22 @@ def update_setting(key):
     else:
         old_value = setting.value
         setting.value = str(new_value)
-        setting.updated_by = current_profile_id
+        setting.updated_by = sess_profile.id
         action = "update"
 
+    # Commit to database first
     db.session.commit()
+
+    # Get updated setting data
+    setting_data = setting.to_dict()
+
+    # Update Redis cache
+    settings_cache.set_setting(key, setting_data)
 
     # Audit log
     audit_logger.log(
-        user_id=current_profile.id,
-        username=current_profile.username,
+        user_id=sess_profile.id,
+        username=sess_profile.username,
         action=action,
         entity_type="system_setting",
         entity_id=setting.id,
@@ -174,18 +192,15 @@ def update_setting(key):
         ip_address=request.remote_addr,
     )
 
-    return jsonify(setting.to_dict())
+    return jsonify(setting_data)
 
 
 @settings_bp.route("/bulk", methods=["PUT"])
 @jwt_required()
-def update_settings_bulk():
+@require_admin_role
+def update_settings_bulk(**kwargs):
     """Update multiple settings at once"""
-    current_profile_username = get_jwt_identity()
-    current_profile = Profile.query.filter_by(username=current_profile_username).first()
-
-    if current_profile.role != ProfileRole.ADMIN:
-        return jsonify({"message": "Unauthorized"}), 403
+    sess_profile = kwargs.get("sess_profile")
 
     data = request.json
     updates = data.get("settings", {})
@@ -206,19 +221,19 @@ def update_settings_bulk():
                 value=str(value),
                 description=DEFAULT_SETTINGS[key]["description"],
                 data_type=DEFAULT_SETTINGS[key]["data_type"],
-                updated_by=current_profile_id,
+                updated_by=sess_profile.id,
             )
             db.session.add(setting)
             old_value = None
         else:
             old_value = setting.value
             setting.value = str(value)
-            setting.updated_by = current_profile_id
+            setting.updated_by = sess_profile.id
 
         # Audit log
         audit_logger.log(
-            user_id=current_profile.id,
-            username=current_profile.username,
+            user_id=sess_profile.id,
+            username=sess_profile.username,
             action="update",
             entity_type="system_setting",
             entity_id=setting.id if setting.id else None,
@@ -230,6 +245,10 @@ def update_settings_bulk():
 
         updated.append(key)
 
+    # Commit to database first
     db.session.commit()
+
+    # Invalidate all settings cache since multiple settings changed
+    settings_cache.clear_all_caches()
 
     return jsonify({"message": f"Updated {len(updated)} settings", "updated": updated})

@@ -318,9 +318,9 @@ class Asset(db.Model):
     transfers = db.relationship("AssetTransfer", backref="asset", lazy="dynamic")
     assigned_user = db.relationship("Profile", foreign_keys=[assigned_to_user])
     assigned_department = db.relationship(
-        "Department", foreign_keys=[assigned_to_department]
+        "Department", foreign_keys=[assigned_to_department], overlaps="assets"
     )
-    category = db.relationship("AssetCategory", foreign_keys=[category_id])
+    category = db.relationship("AssetCategory", foreign_keys=[category_id], overlaps="assets,category_obj")
 
     # Backward compatibility properties
     @property
@@ -597,3 +597,146 @@ class UserSession(db.Model):
         if not include_inactive:
             query = query.filter_by(is_active=True)
         return query
+
+
+class EquipmentRequestStatus(Enum):
+    """Status for equipment request workflow"""
+    DRAFT = "draft"  # Đang soạn thảo
+    PENDING_SIGNATURE = "pending_signature"  # Chờ ký
+    PENDING_MANAGER_APPROVAL = "pending_manager_approval"  # Chờ quản lý phê duyệt
+    APPROVED = "approved"  # Đã phê duyệt
+    REJECTED = "rejected"  # Từ chối
+    COMPLETED = "completed"  # Hoàn thành (đã cấp phát)
+    CANCELLED = "cancelled"  # Hủy bỏ
+
+
+class EquipmentRequest(db.Model):
+    """Equipment request form - Phiếu yêu cầu cung cấp trang thiết bị văn phòng"""
+
+    __tablename__ = "equipment_requests"
+
+    id = db.Column(db.Integer, primary_key=True)
+    request_code = db.Column(db.String(50), unique=True, nullable=False)  # Mã phiếu
+
+    # Requester information
+    requester_id = db.Column(db.Integer, db.ForeignKey("profiles.id"), nullable=False)
+    department_id = db.Column(db.Integer, db.ForeignKey("departments.id"), nullable=False)
+
+    # Request details
+    request_title = db.Column(db.String(200), nullable=False)  # Tiêu đề yêu cầu
+    justification = db.Column(db.Text, nullable=False)  # Lý do yêu cầu
+    urgency_level = db.Column(db.String(20), default="normal")  # normal, high, urgent
+    expected_date = db.Column(db.Date)  # Ngày mong muốn nhận
+
+    # Workflow status
+    status = db.Column(db.Enum(EquipmentRequestStatus), default=EquipmentRequestStatus.DRAFT)
+
+    # Digital signatures
+    requester_signature = db.Column(db.Text)  # Chữ ký người yêu cầu (base64)
+    requester_signed_at = db.Column(db.DateTime)
+
+    manager_id = db.Column(db.Integer, db.ForeignKey("profiles.id"))  # Người phê duyệt
+    manager_signature = db.Column(db.Text)  # Chữ ký quản lý (base64)
+    manager_signed_at = db.Column(db.DateTime)
+    manager_notes = db.Column(db.Text)  # Ghi chú của quản lý
+
+    # HR processing
+    hr_processor_id = db.Column(db.Integer, db.ForeignKey("profiles.id"))  # Người xử lý (HCNS)
+    hr_notes = db.Column(db.Text)  # Ghi chú của HCNS
+    hr_processed_at = db.Column(db.DateTime)
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = db.Column(db.DateTime)
+
+    # Relationships
+    requester = db.relationship("Profile", foreign_keys=[requester_id])
+    department = db.relationship("Department", foreign_keys=[department_id])
+    manager = db.relationship("Profile", foreign_keys=[manager_id])
+    hr_processor = db.relationship("Profile", foreign_keys=[hr_processor_id])
+    items = db.relationship("EquipmentRequestItem", backref="request", lazy="dynamic", cascade="all, delete-orphan")
+
+    @classmethod
+    def query_all(cls, include_deleted=False):
+        """Query with soft delete support"""
+        if include_deleted:
+            return cls.query
+        else:
+            return cls.query.filter(cls.deleted_at.is_(None))
+
+    def to_dict(self, include_items=True):
+        result = {
+            "id": self.id,
+            "request_code": self.request_code,
+            "requester_id": self.requester_id,
+            "requester_name": self.requester.fullname if self.requester else None,
+            "requester_username": self.requester.username if self.requester else None,
+            "department_id": self.department_id,
+            "department_name": self.department.name if self.department else None,
+            "request_title": self.request_title,
+            "justification": self.justification,
+            "urgency_level": self.urgency_level,
+            "expected_date": self.expected_date.isoformat() if self.expected_date else None,
+            "status": self.status.value,
+            "requester_signed_at": self.requester_signed_at.isoformat() if self.requester_signed_at else None,
+            "has_requester_signature": bool(self.requester_signature),
+            "manager_id": self.manager_id,
+            "manager_name": self.manager.fullname if self.manager else None,
+            "manager_signed_at": self.manager_signed_at.isoformat() if self.manager_signed_at else None,
+            "has_manager_signature": bool(self.manager_signature),
+            "manager_notes": self.manager_notes,
+            "hr_processor_id": self.hr_processor_id,
+            "hr_processor_name": self.hr_processor.fullname if self.hr_processor else None,
+            "hr_notes": self.hr_notes,
+            "hr_processed_at": self.hr_processed_at.isoformat() if self.hr_processed_at else None,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+        if include_items:
+            result["items"] = [item.to_dict() for item in self.items.all()]
+
+        return result
+
+
+class EquipmentRequestItem(db.Model):
+    """Individual equipment items in a request"""
+
+    __tablename__ = "equipment_request_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    request_id = db.Column(db.Integer, db.ForeignKey("equipment_requests.id"), nullable=False)
+
+    # Equipment details
+    equipment_name = db.Column(db.String(200), nullable=False)
+    category_id = db.Column(db.Integer, db.ForeignKey("asset_categories.id"))
+    specifications = db.Column(db.Text)  # Thông số kỹ thuật
+    quantity = db.Column(db.Integer, default=1)
+    estimated_price = db.Column(db.Float)  # Giá ước tính
+    notes = db.Column(db.Text)
+
+    # Asset linkage (after approval and procurement)
+    asset_id = db.Column(db.Integer, db.ForeignKey("assets.id"))  # Tài sản được cấp
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    category = db.relationship("AssetCategory", foreign_keys=[category_id])
+    asset = db.relationship("Asset", foreign_keys=[asset_id])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "request_id": self.request_id,
+            "equipment_name": self.equipment_name,
+            "category_id": self.category_id,
+            "category_name": self.category.name if self.category else None,
+            "specifications": self.specifications,
+            "quantity": self.quantity,
+            "estimated_price": self.estimated_price,
+            "notes": self.notes,
+            "asset_id": self.asset_id,
+            "asset_code": self.asset.code if self.asset else None,
+            "created_at": self.created_at.isoformat(),
+        }
